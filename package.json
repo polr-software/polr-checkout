@@ -1,0 +1,42 @@
+{
+  "name": "polr-checkout-root",
+  "version": "0.0.1",
+  "private": true,
+  "description": "One-shot payments kit for TypeScript apps",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/polr-software/polr-checkout"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "type": "module",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "test:unit": "node ./node_modules/vitest/vitest.mjs run --config vitest.unit.config.ts",
+    "typecheck": "turbo run typecheck",
+    "format": "oxfmt --write \"**/*.{ts,tsx,js,jsx}\"",
+    "format:check": "oxfmt --check \"**/*.{ts,tsx,js,jsx}\"",
+    "lint": "oxlint --deny-warnings",
+    "lint:fix": "oxlint --fix"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "oxfmt": "^0.36.0",
+    "oxlint": "^1.51.0",
+    "turbo": "^2.8.10",
+    "typescript": "catalog:",
+    "vitest": "^4.0.18"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "bun@1.3.13",
+  "catalog": {
+    "typescript": "5.9.2",
+    "zod": "^4.3.6",
+    "@types/node": "^25.0.3"
+  }
+}

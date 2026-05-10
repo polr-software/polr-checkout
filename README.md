@@ -1,0 +1,56 @@
+# polr-checkout
+
+One-shot payments kit for TypeScript apps. Modular providers, runs inside your
+app, uses your database. No subscriptions, no metering — just create an order,
+collect the money, react to the result.
+
+```ts
+import { przelewy24 } from "@polr-software/przelewy24";
+import { createCheckout, zoneShipping } from "@polr-software/checkout";
+
+export const checkout = createCheckout({
+  database: process.env.DATABASE_URL!,
+  provider: przelewy24({
+    merchantId: Number(process.env.PRZELEWY24_MERCHANT_ID!),
+    posId: Number(process.env.PRZELEWY24_POS_ID!),
+    crcKey: process.env.PRZELEWY24_CRC_KEY!,
+    apiKey: process.env.PRZELEWY24_API_KEY!,
+    mode: "sandbox",
+  }),
+  currency: "PLN",
+  shipping: zoneShipping({
+    zones: [
+      { id: 1, name: "Strefa 1", amount: 500, geometry: zone1 },
+      { id: 2, name: "Strefa 2", amount: 1000, geometry: zone2 },
+    ],
+    onOutOfZone: "reject",
+  }),
+  on: {
+    "order.paid": async ({ payload }) => {
+      // notify your POS, send a receipt, fulfill the order
+    },
+  },
+});
+```
+
+In a Next.js app:
+
+```ts
+// app/polr/[...path]/route.ts
+import { polrHandler } from "@polr-software/checkout/handlers/next";
+import { checkout } from "@/lib/checkout";
+
+export const { GET, POST } = polrHandler(checkout);
+```
+
+Status: alpha. v1 supports Przelewy24 only. Refunds and additional providers
+land in a later iteration.
+
+## Packages
+
+- `@polr-software/checkout` — framework core
+- `@polr-software/przelewy24` — Przelewy24 provider adapter
+
+## License
+
+MIT.

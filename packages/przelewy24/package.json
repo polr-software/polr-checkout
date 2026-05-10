@@ -1,0 +1,39 @@
+{
+  "name": "@polr-software/przelewy24",
+  "version": "0.0.1",
+  "description": "Przelewy24 provider adapter for @polr-software/checkout",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/polr-software/polr-checkout.git"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "polr-source": "./src/index.ts",
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsdown --config tsdown.config.ts",
+    "typecheck": "tsc --build"
+  },
+  "dependencies": {
+    "@polr-software/checkout": "workspace:*"
+  },
+  "devDependencies": {
+    "tsdown": "^0.21.1",
+    "typescript": "^5.9.2",
+    "vitest": "^4.0.18"
+  }
+}
