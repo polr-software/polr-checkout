@@ -81,10 +81,12 @@ export function definePolrMethod<const TConfig extends PolrMethodConfig, TResult
   };
 
   if (config.route) {
+    const method = config.route.method;
+    const allowsBody = method !== "GET" && method !== "HEAD";
     const endpoint = createPolrEndpoint(
       config.route.path,
       {
-        body: config.input as never,
+        ...(allowsBody && config.input ? { body: config.input as never } : {}),
         ...config.route,
         path: undefined,
         resolveInput: undefined,
