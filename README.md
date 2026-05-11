@@ -43,11 +43,16 @@ In a Next.js app:
 
 ```ts
 // app/polr/[...path]/route.ts
-import { polrHandler } from "@polr-software/checkout/handlers/next";
+import { polrWebhookHandler } from "@polr-software/checkout/handlers/next";
 import { checkout } from "@/lib/checkout";
 
-export const { GET, POST } = polrHandler(checkout);
+export const { GET, POST } = polrWebhookHandler(checkout);
 ```
+
+Use `polrHandler(checkout)` only when your app intentionally exposes the
+order/shipping HTTP API. For a typical server-side integration, expose only the
+webhook route and call `checkout.createOrder`, `checkout.syncOrder`, and other
+methods from your server code.
 
 After the buyer returns from the hosted payment page, you can reconcile the
 local order with the payment provider:
