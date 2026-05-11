@@ -5,6 +5,7 @@ import {
   getOrder as getOrderService,
   listOrders as listOrdersService,
   resolveShipping as resolveShippingService,
+  syncOrder as syncOrderService,
 } from "../order/order.service";
 import type { PolrInstance } from "../types/instance";
 import type { ExactOptions, PolrOptions } from "../types/options";
@@ -55,6 +56,11 @@ export function createCheckout<const TOptions extends PolrOptions>(
     async listOrders(input) {
       const ctx = await getContext();
       return listOrdersService(ctx, input);
+    },
+
+    async syncOrder(input) {
+      const ctx = await getContext();
+      return syncOrderService(ctx, input);
     },
 
     async cancelOrder(input) {

@@ -49,6 +49,21 @@ import { checkout } from "@/lib/checkout";
 export const { GET, POST } = polrHandler(checkout);
 ```
 
+After the buyer returns from the hosted payment page, you can reconcile the
+local order with the payment provider:
+
+```ts
+const order = await checkout.syncOrder({
+  id: orderId,
+  closeIfUnpaid: true,
+});
+```
+
+`syncOrder` is intentionally separate from `getOrder`, because it can update the
+local order. For Przelewy24 this matters because `urlStatus` notifications are
+sent only for correct payments. A failed or abandoned transaction may never hit
+your webhook, so the provider adapter checks `transaction/by/sessionId`.
+
 Status: alpha. v1 supports Przelewy24 only. Refunds and additional providers
 land in a later iteration.
 

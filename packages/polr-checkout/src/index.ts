@@ -36,6 +36,8 @@ export type {
   ListOrdersResult,
   ResolveShippingInput,
   ResolveShippingResult,
+  SyncOrderInput,
+  SyncOrderResult,
 } from "./order/order.service";
 
 export type {
@@ -47,6 +49,8 @@ export type {
   ProviderCheckResult,
   ProviderRefundInput,
   ProviderRefundResult,
+  ProviderSyncTransactionInput,
+  ProviderSyncTransactionResult,
   ProviderTransactionInput,
   ProviderTransactionItem,
   ProviderTransactionResult,

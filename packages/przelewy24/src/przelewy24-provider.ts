@@ -5,6 +5,8 @@ import {
   type PaymentProvider,
   type PolrProviderConfig,
   type ProviderCheckResult,
+  type ProviderSyncTransactionInput,
+  type ProviderSyncTransactionResult,
   type ProviderTransactionInput,
   type ProviderTransactionResult,
   type ProviderVerifyInput,
@@ -71,6 +73,20 @@ interface RegisterResponse {
 
 interface VerifyResponse {
   data: { status: "success" };
+  responseCode: 0;
+}
+
+type Przelewy24TransactionStatus = 0 | 1 | 2 | 3;
+
+interface TransactionBySessionIdResponse {
+  data: {
+    amount: number;
+    currency: string;
+    orderId: number;
+    paymentMethod?: number;
+    sessionId: string;
+    status: Przelewy24TransactionStatus;
+  } & Record<string, unknown>;
   responseCode: 0;
 }
 
@@ -231,6 +247,58 @@ function getEnvironment(mode: Przelewy24Mode): string {
   return mode === "sandbox" ? "sandbox" : "live";
 }
 
+function buildSyncProviderData(
+  transaction: TransactionBySessionIdResponse["data"],
+): Record<string, unknown> {
+  return {
+    lastStatusCheck: transaction,
+    providerMethodId: transaction.paymentMethod ?? null,
+  };
+}
+
+function mapTransactionStatus(
+  input: ProviderSyncTransactionInput,
+  transaction: TransactionBySessionIdResponse["data"] | null,
+): ProviderSyncTransactionResult {
+  if (!transaction) {
+    return { status: "pending" };
+  }
+
+  const providerData = buildSyncProviderData(transaction);
+
+  if (transaction.status === 2) {
+    return {
+      amount: transaction.amount,
+      currency: transaction.currency,
+      providerData,
+      providerTransactionId: String(transaction.orderId),
+      status: "paid",
+    };
+  }
+
+  if (transaction.status === 3) {
+    return {
+      providerData,
+      providerTransactionId: String(transaction.orderId),
+      error: "Przelewy24 reported returned payment",
+      status: "failed",
+    };
+  }
+
+  if (transaction.status === 0 && input.closeIfUnpaid) {
+    return {
+      providerData,
+      providerTransactionId: Number.isFinite(transaction.orderId)
+        ? String(transaction.orderId)
+        : input.providerTransactionId,
+      error: "Przelewy24 reported no payment",
+      status: "failed",
+    };
+  }
+
+  return { providerData, status: "pending" };
+}
+
 export function createPrzelewy24Provider(
   options: Przelewy24Options,
   client: Przelewy24Client,
@@ -328,6 +396,19 @@ export function createPrzelewy24Provider(
         const message = error instanceof Error ? error.message : String(error);
         throw PolrError.from("BAD_GATEWAY", POLR_ERROR_CODES.PROVIDER_VERIFY_FAILED, message);
       }
+    },
+
+    async syncTransaction(
+      input: ProviderSyncTransactionInput,
+    ): Promise<ProviderSyncTransactionResult> {
+      const result = await client.fetch<TransactionBySessionIdResponse | null>(
+        `/transaction/by/sessionId/${encodeURIComponent(input.orderId)}`,
+        {
+          notFoundOk: true,
+        },
+      );
+
+      return mapTransactionStatus(input, result?.data ?? null);
     },
 
     async check(): Promise<ProviderCheckResult> {

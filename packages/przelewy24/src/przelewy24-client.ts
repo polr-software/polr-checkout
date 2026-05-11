@@ -16,7 +16,7 @@ export interface Przelewy24Client {
   authHeader: () => string;
   fetch: <TResponse>(
     path: string,
-    init?: { method?: "GET" | "POST" | "PUT"; body?: unknown },
+    init?: { method?: "GET" | "POST" | "PUT"; body?: unknown; notFoundOk?: boolean },
   ) => Promise<TResponse>;
 }
 
@@ -61,7 +61,7 @@ export function createPrzelewy24Client(options: Przelewy24ClientOptions): Przele
     trnRequestUrl: (token) => `${trnBase}/${encodeURIComponent(token)}`,
     async fetch<TResponse>(
       path: string,
-      init: { method?: "GET" | "POST" | "PUT"; body?: unknown } = {},
+      init: { method?: "GET" | "POST" | "PUT"; body?: unknown; notFoundOk?: boolean } = {},
     ): Promise<TResponse> {
       const response = await fetch(`${base}${path}`, {
         method: init.method ?? "GET",
@@ -84,6 +84,10 @@ export function createPrzelewy24Client(options: Przelewy24ClientOptions): Przele
           POLR_ERROR_CODES.PROVIDER_TRANSACTION_FAILED,
           `Przelewy24 returned non-JSON response (${response.status}): ${text.slice(0, 256)}`,
         );
+      }
+
+      if (response.status === 404 && init.notFoundOk) {
+        return null as TResponse;
       }
 
       if (!response.ok || (data as Przelewy24ApiError | null)?.responseCode !== 0) {

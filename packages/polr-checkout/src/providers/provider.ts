@@ -62,6 +62,24 @@ export interface ProviderVerifyInput {
   currency: string;
 }
 
+export interface ProviderSyncTransactionInput {
+  orderId: string;
+  amount: number;
+  currency: string;
+  providerTransactionId?: string | null;
+  providerData?: Record<string, unknown>;
+  closeIfUnpaid?: boolean;
+}
+
+export interface ProviderSyncTransactionResult {
+  status: "pending" | "paid" | "failed";
+  amount?: number;
+  currency?: string;
+  providerTransactionId?: string | null;
+  providerData?: Record<string, unknown>;
+  error?: string | null;
+}
+
 export interface ProviderRefundInput {
   orderId: string;
   providerTransactionId: string;
@@ -94,6 +112,9 @@ export interface PaymentProvider {
 
   /** Second-step verification (e.g. Przelewy24 PUT /transaction/verify). */
   verifyTransaction?(input: ProviderVerifyInput): Promise<void>;
+
+  /** Syncs local order state from provider state when no webhook is available yet. */
+  syncTransaction?(input: ProviderSyncTransactionInput): Promise<ProviderSyncTransactionResult>;
 
   /** Refund support; reserved for v2. */
   refund?(input: ProviderRefundInput): Promise<ProviderRefundResult>;

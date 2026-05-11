@@ -71,6 +71,17 @@ export interface CancelOrderResult {
   status: OrderStatus;
 }
 
+export interface SyncOrderInput {
+  id: string;
+  /**
+   * Allows provider-specific "no payment" states to close the order as failed.
+   * Useful after the buyer returns from a hosted payment page or after a local timeout.
+   */
+  closeIfUnpaid?: boolean;
+}
+
+export type SyncOrderResult = StoredOrder;
+
 export interface ResolveShippingInput {
   address?: NormalizedAddress | null;
   coordinates?: { lat: number; lng: number } | null;
@@ -171,6 +182,55 @@ export async function getOrder(ctx: PolrContext, id: string): Promise<StoredOrde
   return ctx.store.getOrder(id);
 }
 
+export async function syncOrder(
+  ctx: PolrContext,
+  input: SyncOrderInput,
+): Promise<SyncOrderResult | null> {
+  const existing = await getOrder(ctx, input.id);
+  if (!existing || existing.status !== "pending" || !ctx.provider.syncTransaction) {
+    return existing;
+  }
+
+  const synced = await ctx.provider.syncTransaction({
+    amount: existing.amount,
+    closeIfUnpaid: input.closeIfUnpaid,
+    currency: existing.currency,
+    orderId: existing.id,
+    providerData: existing.providerData,
+    providerTransactionId: existing.providerTransactionId,
+  });
+
+  if (synced.status === "pending") {
+    return existing;
+  }
+
+  if (synced.status === "paid") {
+    return processProviderPaidOrder(ctx, {
+      amount: synced.amount ?? existing.amount,
+      currency: synced.currency ?? existing.currency,
+      id: existing.id,
+      providerData: synced.providerData,
+      providerTransactionId: synced.providerTransactionId ?? existing.providerTransactionId,
+    });
+  }
+
+  const failed = await markOrderFailed(ctx, {
+    error: synced.error ?? "Provider reported failed payment",
+    id: existing.id,
+    providerData: synced.providerData,
+    providerTransactionId: synced.providerTransactionId ?? existing.providerTransactionId,
+  });
+
+  if (failed) {
+    await emitEvent(ctx, "order.failed", {
+      error: failed.error,
+      order: toEventPayload(failed),
+    });
+  }
+
+  return failed ?? (await getOrder(ctx, existing.id));
+}
+
 export async function listOrders(
   ctx: PolrContext,
   input: ListOrdersInput = {},
@@ -215,9 +275,89 @@ export async function markOrderPaid(
 
 export async function markOrderFailed(
   ctx: PolrContext,
-  input: { id: string; error: string },
+  input: {
+    id: string;
+    error: string;
+    providerData?: Record<string, unknown>;
+    providerTransactionId?: string | null;
+  },
 ): Promise<StoredOrder | null> {
   return ctx.store.setOrderFailed(input);
+}
+
+export async function processProviderPaidOrder(
+  ctx: PolrContext,
+  input: {
+    id: string;
+    amount: number;
+    currency: string;
+    providerTransactionId?: string | null;
+    providerData?: Record<string, unknown>;
+  },
+): Promise<StoredOrder> {
+  const providerTransactionId = input.providerTransactionId;
+  if (!providerTransactionId) {
+    throw PolrError.from(
+      "BAD_REQUEST",
+      POLR_ERROR_CODES.PROVIDER_VERIFY_FAILED,
+      `providerTransactionId is required for order ${input.id}`,
+    );
+  }
+
+  const existing = await getOrder(ctx, input.id);
+  if (!existing) {
+    throw PolrError.from("NOT_FOUND", POLR_ERROR_CODES.ORDER_NOT_FOUND);
+  }
+  if (existing.amount !== input.amount) {
+    throw PolrError.from(
+      "CONFLICT",
+      POLR_ERROR_CODES.ORDER_AMOUNT_MISMATCH,
+      `Provider amount ${input.amount} does not match order amount ${existing.amount}`,
+    );
+  }
+  if (existing.currency.toUpperCase() !== input.currency.toUpperCase()) {
+    throw PolrError.from(
+      "CONFLICT",
+      POLR_ERROR_CODES.ORDER_CURRENCY_MISMATCH,
+      `Provider currency ${input.currency} does not match order currency ${existing.currency}`,
+    );
+  }
+  if (existing.status === "paid") {
+    await runOrderPaidHook(ctx, { order: toEventPayload(existing) });
+    return existing;
+  }
+  if (existing.status !== "pending") {
+    throw PolrError.from(
+      "CONFLICT",
+      POLR_ERROR_CODES.ORDER_INVALID_STATE,
+      `Order ${existing.id} is ${existing.status}`,
+    );
+  }
+
+  if (ctx.provider.verifyTransaction) {
+    await ctx.provider.verifyTransaction({
+      amount: input.amount,
+      currency: input.currency,
+      orderId: input.id,
+      providerTransactionId,
+    });
+  }
+
+  const updated = await markOrderPaid(ctx, {
+    id: input.id,
+    providerData: input.providerData,
+    providerTransactionId,
+  });
+  const paidOrder = updated ?? (await ctx.store.getOrder(input.id));
+  if (!paidOrder || paidOrder.status !== "paid") {
+    throw PolrError.from("CONFLICT", POLR_ERROR_CODES.ORDER_INVALID_STATE);
+  }
+  if (updated) {
+    await emitEvent(ctx, "order.paid", { order: toEventPayload(updated) });
+  }
+  await runOrderPaidHook(ctx, { order: toEventPayload(paidOrder) });
+
+  return paidOrder;
 }
 
 export function toEventPayload(row: StoredOrder): PolrOrderEventPayload {

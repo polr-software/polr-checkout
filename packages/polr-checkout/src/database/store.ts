@@ -40,7 +40,12 @@ export interface PolrStore {
   getOrder(id: string): Promise<StoredOrder | null>;
   listOrders(input?: ListStoredOrdersInput): Promise<ListStoredOrdersResult>;
   setOrderCancelled(input: { id: string; reason?: string }): Promise<StoredOrder | null>;
-  setOrderFailed(input: { id: string; error: string }): Promise<StoredOrder | null>;
+  setOrderFailed(input: {
+    id: string;
+    error: string;
+    providerData?: Record<string, unknown>;
+    providerTransactionId?: string | null;
+  }): Promise<StoredOrder | null>;
   setOrderPaid(input: {
     id: string;
     providerData?: Record<string, unknown>;

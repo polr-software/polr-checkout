@@ -4,12 +4,10 @@ import { generateId } from "../core/utils";
 import {
   emitEvent,
   markOrderFailed,
-  markOrderPaid,
-  runOrderPaidHook,
+  processProviderPaidOrder,
   toEventPayload,
 } from "../order/order.service";
 import type { NormalizedNotification } from "../providers/provider";
-import type { StoredOrder } from "../types/models";
 
 export interface HandleWebhookInput {
   body: string;
@@ -19,10 +17,6 @@ export interface HandleWebhookInput {
 
 function errorDetail(error: unknown): string {
   return error instanceof Error ? (error.stack ?? error.message) : String(error);
-}
-
-async function processPaidOrderHook(ctx: PolrContext, order: StoredOrder): Promise<void> {
-  await runOrderPaidHook(ctx, { order: toEventPayload(order) });
 }
 
 async function processNotification(
@@ -51,7 +45,12 @@ async function processNotification(
 
   if (existing.status === "paid") {
     ctx.logger.info({ orderId: existing.id }, "order already paid, retrying fulfillment hook");
-    await processPaidOrderHook(ctx, existing);
+    await processProviderPaidOrder(ctx, {
+      amount: notification.amount,
+      currency: notification.currency,
+      id: notification.orderId,
+      providerTransactionId: notification.providerTransactionId,
+    });
     return;
   }
 
@@ -63,16 +62,9 @@ async function processNotification(
     );
   }
 
-  if (ctx.provider.verifyTransaction) {
-    await ctx.provider.verifyTransaction({
-      amount: notification.amount,
-      currency: notification.currency,
-      orderId: notification.orderId,
-      providerTransactionId: notification.providerTransactionId,
-    });
-  }
-
-  const updated = await markOrderPaid(ctx, {
+  await processProviderPaidOrder(ctx, {
+    amount: notification.amount,
+    currency: notification.currency,
     id: notification.orderId,
     providerData: {
       lastNotification: notification.raw,
@@ -80,18 +72,6 @@ async function processNotification(
     },
     providerTransactionId: notification.providerTransactionId,
   });
-
-  const paidOrder = updated ?? (await ctx.store.getOrder(notification.orderId));
-
-  if (!paidOrder || paidOrder.status !== "paid") {
-    throw PolrError.from("CONFLICT", POLR_ERROR_CODES.ORDER_INVALID_STATE);
-  }
-
-  if (updated) {
-    await emitEvent(ctx, "order.paid", { order: toEventPayload(updated) });
-  }
-
-  await processPaidOrderHook(ctx, paidOrder);
 }
 
 async function failWebhookOrder(

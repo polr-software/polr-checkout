@@ -56,7 +56,19 @@ export function createDrizzleStore(db: PolrDatabase): PolrStore {
     async setOrderFailed(input) {
       const [updated] = await db
         .update(order)
-        .set({ error: input.error, status: "failed", updatedAt: new Date() })
+        .set({
+          error: input.error,
+          ...(input.providerData
+            ? {
+                providerData: sql`${order.providerData} || ${JSON.stringify(input.providerData)}::jsonb`,
+              }
+            : {}),
+          ...(input.providerTransactionId !== undefined
+            ? { providerTransactionId: input.providerTransactionId }
+            : {}),
+          status: "failed",
+          updatedAt: new Date(),
+        })
         .where(eq(order.id, input.id))
         .returning();
       return updated ?? null;
