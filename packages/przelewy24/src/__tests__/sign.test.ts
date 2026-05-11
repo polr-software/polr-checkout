@@ -9,20 +9,20 @@ import {
 } from "../sign";
 
 describe("sha384OfJson", () => {
-  it("preserves insertion order", () => {
-    const a = sha384OfJson({ a: 1, b: 2 });
-    const b = sha384OfJson({ b: 2, a: 1 });
+  it("preserves insertion order", async () => {
+    const a = await sha384OfJson({ a: 1, b: 2 });
+    const b = await sha384OfJson({ b: 2, a: 1 });
     expect(a).not.toEqual(b);
   });
 
-  it("produces a 96-char hex digest", () => {
-    expect(sha384OfJson({ x: 1 })).toMatch(/^[a-f0-9]{96}$/);
+  it("produces a 96-char hex digest", async () => {
+    await expect(sha384OfJson({ x: 1 })).resolves.toMatch(/^[a-f0-9]{96}$/);
   });
 });
 
 describe("registrationSign", () => {
-  it("matches a known fixture", () => {
-    const sign = registrationSign({
+  it("matches a known fixture", async () => {
+    const sign = await registrationSign({
       sessionId: "session-1",
       merchantId: 392110,
       amount: 4500,
@@ -33,7 +33,7 @@ describe("registrationSign", () => {
     expect(sign).toMatch(/^[a-f0-9]{96}$/);
     // The same input must always produce the same hash.
     expect(
-      registrationSign({
+      await registrationSign({
         sessionId: "session-1",
         merchantId: 392110,
         amount: 4500,
@@ -43,15 +43,15 @@ describe("registrationSign", () => {
     ).toEqual(sign);
   });
 
-  it("differs when any field changes", () => {
-    const base = registrationSign({
+  it("differs when any field changes", async () => {
+    const base = await registrationSign({
       sessionId: "session-1",
       merchantId: 392110,
       amount: 4500,
       currency: "PLN",
       crcKey: "c8392f35d5146680",
     });
-    const other = registrationSign({
+    const other = await registrationSign({
       sessionId: "session-1",
       merchantId: 392110,
       amount: 4501,
@@ -63,8 +63,8 @@ describe("registrationSign", () => {
 });
 
 describe("verificationSign", () => {
-  it("includes orderId", () => {
-    const sign = verificationSign({
+  it("includes orderId", async () => {
+    const sign = await verificationSign({
       sessionId: "s",
       orderId: 123,
       amount: 100,
@@ -76,8 +76,8 @@ describe("verificationSign", () => {
 });
 
 describe("notificationSign", () => {
-  it("hashes all fields in fixed order", () => {
-    const sign = notificationSign({
+  it("hashes all fields in fixed order", async () => {
+    const sign = await notificationSign({
       merchantId: 1,
       posId: 1,
       sessionId: "s",

@@ -1,14 +1,7 @@
-import { and, desc, eq, lt, sql } from "drizzle-orm";
-
 import type { PolrContext } from "../core/context";
 import { PolrError, POLR_ERROR_CODES } from "../core/errors";
 import { generateOrderId } from "../core/utils";
-import { order } from "../database/schema";
-import type {
-  NormalizedAddress,
-  NormalizedCustomer,
-  ProviderTransactionItem,
-} from "../providers/provider";
+import type { NormalizedAddress, ProviderTransactionItem } from "../providers/provider";
 import type { ShippingResult } from "../shipping/shipping";
 import type { PolrEventName, PolrEventMap, PolrOrderEventPayload } from "../types/events";
 import type {
@@ -159,10 +152,7 @@ export async function createOrder(
       returnUrl,
     };
 
-    const [stored] = await ctx.database.insert(order).values(orderRow).returning();
-    if (!stored) {
-      throw new Error("Failed to insert order");
-    }
+    const stored = await ctx.store.createOrder(orderRow);
 
     await emitEvent(ctx, "order.created", { order: toEventPayload(stored) });
 
@@ -178,28 +168,14 @@ export async function createOrder(
 }
 
 export async function getOrder(ctx: PolrContext, id: string): Promise<StoredOrder | null> {
-  const row = await ctx.database.query.order.findFirst({ where: eq(order.id, id) });
-  return row ?? null;
+  return ctx.store.getOrder(id);
 }
 
 export async function listOrders(
   ctx: PolrContext,
   input: ListOrdersInput = {},
 ): Promise<ListOrdersResult> {
-  const limit = Math.min(Math.max(input.limit ?? 20, 1), 100);
-  const conditions = [];
-  if (input.status) conditions.push(eq(order.status, input.status));
-  if (input.before) conditions.push(lt(order.createdAt, input.before));
-
-  const rows = await ctx.database
-    .select()
-    .from(order)
-    .where(conditions.length > 0 ? and(...conditions) : undefined)
-    .orderBy(desc(order.createdAt))
-    .limit(limit + 1);
-
-  const hasMore = rows.length > limit;
-  return { orders: hasMore ? rows.slice(0, limit) : rows, hasMore };
+  return ctx.store.listOrders(input);
 }
 
 export async function cancelOrder(
@@ -213,16 +189,11 @@ export async function cancelOrder(
   if (existing.status === "paid" || existing.status === "refunded") {
     throw PolrError.from("CONFLICT", POLR_ERROR_CODES.ORDER_INVALID_STATE);
   }
-  const [updated] = await ctx.database
-    .update(order)
-    .set({
-      status: "cancelled",
-      error: input.reason ?? null,
-      updatedAt: new Date(),
-    })
-    .where(eq(order.id, input.id))
-    .returning();
-  return { id: updated!.id, status: updated!.status };
+  const updated = await ctx.store.setOrderCancelled(input);
+  if (!updated) {
+    throw PolrError.from("NOT_FOUND", POLR_ERROR_CODES.ORDER_NOT_FOUND);
+  }
+  return { id: updated.id, status: updated.status };
 }
 
 export async function resolveShipping(
@@ -239,32 +210,14 @@ export async function markOrderPaid(
   ctx: PolrContext,
   input: { id: string; providerTransactionId: string; providerData?: Record<string, unknown> },
 ): Promise<StoredOrder | null> {
-  const now = new Date();
-  const [updated] = await ctx.database
-    .update(order)
-    .set({
-      status: "paid",
-      providerTransactionId: input.providerTransactionId,
-      providerData: sql`${order.providerData} || ${JSON.stringify(input.providerData ?? {})}::jsonb`,
-      paidAt: now,
-      updatedAt: now,
-      error: null,
-    })
-    .where(and(eq(order.id, input.id), eq(order.status, "pending")))
-    .returning();
-  return updated ?? null;
+  return ctx.store.setOrderPaid(input);
 }
 
 export async function markOrderFailed(
   ctx: PolrContext,
   input: { id: string; error: string },
 ): Promise<StoredOrder | null> {
-  const [updated] = await ctx.database
-    .update(order)
-    .set({ status: "failed", error: input.error, updatedAt: new Date() })
-    .where(eq(order.id, input.id))
-    .returning();
-  return updated ?? null;
+  return ctx.store.setOrderFailed(input);
 }
 
 export function toEventPayload(row: StoredOrder): PolrOrderEventPayload {
@@ -291,7 +244,7 @@ export async function emitEvent<TName extends PolrEventName>(
   name: TName,
   payload: PolrEventMap[TName],
 ): Promise<void> {
-  const handlers = ctx.options.on;
+  const handlers = ctx.options.events;
   if (!handlers) return;
 
   const event = { name, payload } as { name: TName; payload: PolrEventMap[TName] };
@@ -313,6 +266,13 @@ export async function emitEvent<TName extends PolrEventName>(
   } catch (error) {
     ctx.logger.error({ err: error, event: name }, "wildcard event handler failed");
   }
+}
+
+export async function runOrderPaidHook(
+  ctx: PolrContext,
+  payload: PolrEventMap["order.paid"],
+): Promise<void> {
+  await ctx.options.hooks?.orderPaid?.(payload);
 }
 
 async function resolveShippingForOrder(

@@ -1,6 +1,6 @@
 {
   "name": "@polr-software/przelewy24",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Przelewy24 provider adapter for @polr-software/checkout",
   "license": "MIT",
   "repository": {

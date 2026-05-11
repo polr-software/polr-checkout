@@ -65,10 +65,7 @@ export function zoneShipping(options: ZoneShippingOptions): ShippingResolver {
   };
 }
 
-function outOfZone(
-  options: ZoneShippingOptions,
-  mode: "reject" | "fallback",
-): ShippingResult {
+function outOfZone(options: ZoneShippingOptions, mode: "reject" | "fallback"): ShippingResult {
   if (mode === "fallback" && options.fallback) {
     return {
       amount: options.fallback.amount,

@@ -13,6 +13,7 @@ export type {
   PolrEventHandlers,
   PolrEventMap,
   PolrEventName,
+  PolrHooks,
   PolrOrderEventPayload,
 } from "./types/events";
 export type {
@@ -57,10 +58,7 @@ export { fixedShipping } from "./shipping/fixed-shipping";
 export type { FixedShippingOptions } from "./shipping/fixed-shipping";
 export { customShipping } from "./shipping/custom-shipping";
 export type { CustomShippingOptions } from "./shipping/custom-shipping";
-export {
-  zoneShipping,
-  isPointInPolygon,
-} from "./shipping/zone-shipping/index";
+export { zoneShipping, isPointInPolygon } from "./shipping/zone-shipping/index";
 export type {
   ZoneGeometry,
   ZoneShippingOptions,
@@ -69,5 +67,5 @@ export type {
 export { geoapify } from "./shipping/zone-shipping/geocoders/geoapify";
 export type { Geocoder, GeoapifyOptions } from "./shipping/zone-shipping/geocoders/geoapify";
 
-export { migrateDatabase, getPendingMigrationCount } from "./database/index";
-export type { PolrDatabase } from "./database/index";
+export { drizzleDatabase } from "./database/index";
+export type { PolrDatabase, PolrDatabaseAdapter, PolrStore } from "./database/index";

@@ -23,9 +23,14 @@ export const receiveWebhook = definePolrMethod(
         return {
           body: await ctx.request!.text(),
           headers: headersToRecord(headers),
+          providerId: ctx.params?.providerId ?? "",
         };
       },
     },
   },
-  async (ctx) => handleWebhook(ctx.polr, ctx.input as { body: string; headers: Record<string, string> }),
+  async (ctx) =>
+    handleWebhook(
+      ctx.polr,
+      ctx.input as { body: string; headers: Record<string, string>; providerId: string },
+    ),
 );

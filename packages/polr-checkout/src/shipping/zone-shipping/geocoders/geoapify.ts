@@ -29,7 +29,9 @@ export function geoapify(options: GeoapifyOptions): Geocoder {
   return {
     async geocode(address) {
       const params = new URLSearchParams({
-        text: [address.line1, address.postalCode, address.city, address.country].filter(Boolean).join(", "),
+        text: [address.line1, address.postalCode, address.city, address.country]
+          .filter(Boolean)
+          .join(", "),
         format: "geojson",
         limit: "1",
         apiKey: options.apiKey,

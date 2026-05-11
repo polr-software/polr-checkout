@@ -7,9 +7,10 @@ collect the money, react to the result.
 ```ts
 import { przelewy24 } from "@polr-software/przelewy24";
 import { createCheckout, zoneShipping } from "@polr-software/checkout";
+import { neonHttpDatabase } from "@polr-software/checkout/database/neon-http";
 
 export const checkout = createCheckout({
-  database: process.env.DATABASE_URL!,
+  database: neonHttpDatabase(process.env.DATABASE_URL!),
   provider: przelewy24({
     merchantId: Number(process.env.PRZELEWY24_MERCHANT_ID!),
     posId: Number(process.env.PRZELEWY24_POS_ID!),
@@ -25,9 +26,14 @@ export const checkout = createCheckout({
     ],
     onOutOfZone: "reject",
   }),
-  on: {
-    "order.paid": async ({ payload }) => {
+  hooks: {
+    orderPaid: async ({ order }) => {
       // notify your POS, send a receipt, fulfill the order
+    },
+  },
+  events: {
+    "order.paid": async ({ payload }) => {
+      // analytics / logging only
     },
   },
 });

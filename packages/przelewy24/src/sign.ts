@@ -1,14 +1,25 @@
-import { Buffer } from "node:buffer";
-import { createHash, timingSafeEqual as nodeTimingSafeEqual } from "node:crypto";
+function getSubtleCrypto(): SubtleCrypto {
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) {
+    throw new Error("Web Crypto API is not available in this runtime");
+  }
+  return subtle;
+}
+
+function toHex(buffer: ArrayBuffer): string {
+  return Array.from(new Uint8Array(buffer), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
 
 /**
  * Hashes a P24 sign payload. Order of keys matters: P24 expects an exact
  * sequence (e.g. `{sessionId, merchantId, amount, currency, crc}` for
  * registration), so callers MUST pass an object whose insertion order matches
- * the spec — `JSON.stringify` is order-preserving.
+ * the spec - `JSON.stringify` is order-preserving.
  */
-export function sha384OfJson(value: object): string {
-  return createHash("sha384").update(JSON.stringify(value), "utf8").digest("hex");
+export async function sha384OfJson(value: object): Promise<string> {
+  const bytes = new TextEncoder().encode(JSON.stringify(value));
+  const digest = await getSubtleCrypto().digest("SHA-384", bytes);
+  return toHex(digest);
 }
 
 export interface RegistrationSignParams {
@@ -19,7 +30,7 @@ export interface RegistrationSignParams {
   crcKey: string;
 }
 
-export function registrationSign(params: RegistrationSignParams): string {
+export function registrationSign(params: RegistrationSignParams): Promise<string> {
   return sha384OfJson({
     sessionId: params.sessionId,
     merchantId: params.merchantId,
@@ -37,7 +48,7 @@ export interface VerificationSignParams {
   crcKey: string;
 }
 
-export function verificationSign(params: VerificationSignParams): string {
+export function verificationSign(params: VerificationSignParams): Promise<string> {
   return sha384OfJson({
     sessionId: params.sessionId,
     orderId: params.orderId,
@@ -60,7 +71,7 @@ export interface NotificationSignParams {
   crcKey: string;
 }
 
-export function notificationSign(params: NotificationSignParams): string {
+export function notificationSign(params: NotificationSignParams): Promise<string> {
   return sha384OfJson({
     merchantId: params.merchantId,
     posId: params.posId,
@@ -77,8 +88,13 @@ export function notificationSign(params: NotificationSignParams): string {
 
 export function timingSafeEqualHex(left: string, right: string): boolean {
   if (!/^[a-f0-9]+$/i.test(left) || !/^[a-f0-9]+$/i.test(right)) return false;
-  const a = Buffer.from(left, "hex");
-  const b = Buffer.from(right, "hex");
-  if (a.length !== b.length) return false;
-  return nodeTimingSafeEqual(a, b);
+  if (left.length !== right.length) return false;
+
+  const normalizedLeft = left.toLowerCase();
+  const normalizedRight = right.toLowerCase();
+  let diff = 0;
+  for (let i = 0; i < normalizedLeft.length; i += 1) {
+    diff |= normalizedLeft.charCodeAt(i) ^ normalizedRight.charCodeAt(i);
+  }
+  return diff === 0;
 }

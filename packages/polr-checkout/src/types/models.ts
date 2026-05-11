@@ -4,13 +4,7 @@ export type StoredOrder = typeof order.$inferSelect;
 export type NewStoredOrder = typeof order.$inferInsert;
 export type StoredWebhookEvent = typeof webhookEvent.$inferSelect;
 
-export type OrderStatus =
-  | "pending"
-  | "paid"
-  | "failed"
-  | "expired"
-  | "cancelled"
-  | "refunded";
+export type OrderStatus = "pending" | "paid" | "failed" | "expired" | "cancelled" | "refunded";
 
 export interface OrderItem {
   id?: string;

@@ -35,3 +35,7 @@ export type PolrEventHandlers = {
     event: { name: PolrEventName; payload: PolrEventMap[PolrEventName] };
   }) => Promise<void> | void;
 };
+
+export interface PolrHooks {
+  orderPaid?: (input: { order: PolrOrderEventPayload }) => Promise<void> | void;
+}

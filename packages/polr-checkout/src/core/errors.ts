@@ -3,8 +3,10 @@ import { APIError } from "better-call/error";
 import { defineErrorCodes, type RawError } from "./error-codes";
 
 export const POLR_ERROR_CODES = defineErrorCodes({
+  DATABASE_REQUIRED: "A database adapter is required",
   PROVIDER_REQUIRED: "A provider is required",
   PROVIDER_INVALID_CONFIG: "Provider config is invalid",
+  PROVIDER_ID_MISMATCH: "Provider webhook route does not match the configured provider",
   PROVIDER_SIGNATURE_INVALID: "Provider webhook signature is invalid",
   PROVIDER_SIGNATURE_MISSING: "Provider webhook signature is missing",
   PROVIDER_TRANSACTION_FAILED: "Provider transaction request failed",
@@ -29,7 +31,8 @@ export const POLR_ERROR_CODES = defineErrorCodes({
   SHIPPING_RESOLVER_MISSING: "shipping resolver is not configured",
 
   BASEPATH_INVALID: "basePath must start with a leading slash",
-  RETURN_URL_REQUIRED: "A returnUrl is required when this method is called without a request context",
+  RETURN_URL_REQUIRED:
+    "A returnUrl is required when this method is called without a request context",
 });
 
 export type PolrErrorCode = keyof typeof POLR_ERROR_CODES;

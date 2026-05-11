@@ -8,12 +8,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 
-import type {
-  OrderCustomer,
-  OrderItem,
-  OrderShippingSnapshot,
-  OrderStatus,
-} from "../types/models";
+import type { OrderCustomer, OrderItem, OrderShippingSnapshot, OrderStatus } from "../types/models";
 
 const pgTable = pgTableCreator((name) => `polr_${name}`);
 
@@ -76,10 +71,7 @@ export const webhookEvent = pgTable(
     processedAt: timestamp("processed_at"),
   },
   (table) => [
-    uniqueIndex("polr_webhook_event_provider_unique").on(
-      table.providerId,
-      table.providerEventId,
-    ),
+    uniqueIndex("polr_webhook_event_provider_unique").on(table.providerId, table.providerEventId),
     index("polr_webhook_event_status_idx").on(table.providerId, table.status),
   ],
 );

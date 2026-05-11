@@ -42,7 +42,8 @@ export const cancelOrder = definePolrMethod(
       path: "/orders/:id/cancel",
       resolveInput: async (ctx) => ({
         id: ctx.params?.id,
-        reason: (await ctx.request?.json().catch(() => null) as { reason?: string } | null)?.reason,
+        reason: ((await ctx.request?.json().catch(() => null)) as { reason?: string } | null)
+          ?.reason,
       }),
     },
   },

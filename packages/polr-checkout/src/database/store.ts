@@ -1,0 +1,55 @@
+import type { PgDatabase } from "drizzle-orm/pg-core";
+
+import type * as schema from "./schema";
+import type { NewStoredOrder, OrderStatus, StoredOrder } from "../types/models";
+
+export type PolrDatabase = PgDatabase<any, typeof schema>;
+
+export interface PolrDatabaseAdapter {
+  store: PolrStore;
+}
+
+export interface ListStoredOrdersInput {
+  status?: OrderStatus;
+  limit?: number;
+  before?: Date;
+}
+
+export interface ListStoredOrdersResult {
+  orders: StoredOrder[];
+  hasMore: boolean;
+}
+
+export interface BeginWebhookEventInput {
+  payload: Record<string, unknown>;
+  providerEventId: string;
+  providerId: string;
+  traceId?: string;
+  type: string;
+}
+
+export interface FinishWebhookEventInput {
+  error?: string;
+  providerEventId: string;
+  providerId: string;
+  status: "failed" | "processed";
+}
+
+export interface PolrStore {
+  createOrder(row: NewStoredOrder): Promise<StoredOrder>;
+  getOrder(id: string): Promise<StoredOrder | null>;
+  listOrders(input?: ListStoredOrdersInput): Promise<ListStoredOrdersResult>;
+  setOrderCancelled(input: { id: string; reason?: string }): Promise<StoredOrder | null>;
+  setOrderFailed(input: { id: string; error: string }): Promise<StoredOrder | null>;
+  setOrderPaid(input: {
+    id: string;
+    providerData?: Record<string, unknown>;
+    providerTransactionId: string;
+  }): Promise<StoredOrder | null>;
+  beginWebhookEvent(input: BeginWebhookEventInput): Promise<boolean>;
+  finishWebhookEvent(input: FinishWebhookEventInput): Promise<void>;
+}
+
+export function createDatabase(adapter: PolrDatabaseAdapter): PolrStore {
+  return adapter.store;
+}

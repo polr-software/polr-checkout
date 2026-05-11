@@ -15,12 +15,7 @@ import {
   type Przelewy24Client,
   type Przelewy24Mode,
 } from "./przelewy24-client";
-import {
-  notificationSign,
-  registrationSign,
-  timingSafeEqualHex,
-  verificationSign,
-} from "./sign";
+import { notificationSign, registrationSign, timingSafeEqualHex, verificationSign } from "./sign";
 
 /** All credentials live with the constructor; nothing is read from env. */
 export interface Przelewy24Options {
@@ -150,11 +145,11 @@ function parseNotificationPayload(body: string): RawNotification {
   };
 }
 
-function buildRegisterBody(
+async function buildRegisterBody(
   options: Required<Pick<Przelewy24Options, "merchantId" | "crcKey">> & { posId: number },
   defaults: Required<Przelewy24Defaults>,
   input: ProviderTransactionInput,
-): Record<string, unknown> {
+): Promise<Record<string, unknown>> {
   const overrides = (input.providerOptions ?? {}) as Partial<Przelewy24Defaults> & {
     method?: number;
     transferLabel?: string;
@@ -198,7 +193,7 @@ function buildRegisterBody(
     transferLabel: overrides.transferLabel,
     encoding,
     cart,
-    sign: registrationSign({
+    sign: await registrationSign({
       sessionId: input.orderId,
       merchantId: options.merchantId,
       amount: input.amount,
@@ -251,7 +246,7 @@ export function createPrzelewy24Provider(
     name: "Przelewy24",
 
     async createTransaction(input): Promise<ProviderTransactionResult> {
-      const body = buildRegisterBody({ merchantId, posId, crcKey }, defaults, input);
+      const body = await buildRegisterBody({ merchantId, posId, crcKey }, defaults, input);
       const result = await client.fetch<RegisterResponse>("/transaction/register", {
         method: "POST",
         body,
@@ -273,7 +268,7 @@ export function createPrzelewy24Provider(
         throw PolrError.from("UNAUTHORIZED", POLR_ERROR_CODES.PROVIDER_MERCHANT_MISMATCH);
       }
 
-      const expected = notificationSign({
+      const expected = await notificationSign({
         merchantId: notification.merchantId,
         posId: notification.posId,
         sessionId: notification.sessionId,
@@ -319,7 +314,7 @@ export function createPrzelewy24Provider(
             amount: input.amount,
             currency: input.currency,
             orderId: orderIdNumber,
-            sign: verificationSign({
+            sign: await verificationSign({
               sessionId: input.orderId,
               orderId: orderIdNumber,
               amount: input.amount,

@@ -1,5 +1,3 @@
-import { Buffer } from "node:buffer";
-
 import { POLR_ERROR_CODES, PolrError } from "@polr-software/checkout";
 
 export type Przelewy24Mode = "sandbox" | "live";
@@ -36,11 +34,26 @@ interface Przelewy24ApiError {
   data?: unknown;
 }
 
+function base64Encode(value: string): string {
+  if (typeof btoa !== "function") {
+    throw new Error("btoa is not available in this runtime");
+  }
+
+  const bytes = new TextEncoder().encode(value);
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary);
+}
+
 export function createPrzelewy24Client(options: Przelewy24ClientOptions): Przelewy24Client {
   const base = options.apiUrl?.replace(/\/+$/, "") ?? `${modeBase(options.mode)}/api/v1`;
-  const trnBase = options.apiUrl ? new URL("/trnRequest", options.apiUrl).toString().replace(/\/+$/, "") : `${modeBase(options.mode)}/trnRequest`;
+  const trnBase = options.apiUrl
+    ? new URL("/trnRequest", options.apiUrl).toString().replace(/\/+$/, "")
+    : `${modeBase(options.mode)}/trnRequest`;
 
-  const auth = `Basic ${Buffer.from(`${options.posId}:${options.apiKey}`, "utf8").toString("base64")}`;
+  const auth = `Basic ${base64Encode(`${options.posId}:${options.apiKey}`)}`;
 
   return {
     apiUrl: base,
