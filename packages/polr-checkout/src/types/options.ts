@@ -30,6 +30,21 @@ export interface PolrOptions {
    */
   basePath?: string;
 
+  /**
+   * Public origin of the app, e.g. `https://shop.example.com`. When set, the
+   * provider webhook (`statusUrl`) is built as an absolute URL and relative
+   * `returnUrl`s are resolved against it. Required by providers that receive the
+   * notification URL per transaction (e.g. Przelewy24).
+   */
+  appUrl?: string;
+
+  /**
+   * Default return URL used when `createOrder` is called without one. May be
+   * absolute or, when `appUrl` is set, relative. Supports the `{ORDER_ID}`
+   * placeholder, replaced with the created order id.
+   */
+  returnUrl?: string;
+
   /** Default currency for new orders. Defaults to `PLN`. */
   currency?: string;
 

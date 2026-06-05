@@ -1,6 +1,6 @@
 {
   "name": "@polr-software/przelewy24",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "Przelewy24 provider adapter for @polr-software/checkout",
   "license": "MIT",
   "repository": {
@@ -8,8 +8,7 @@
     "url": "git+https://github.com/polr-software/polr-checkout.git"
   },
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com",
-    "access": "restricted"
+    "access": "public"
   },
   "files": [
     "dist"

@@ -5,7 +5,8 @@ export type Przelewy24Mode = "sandbox" | "live";
 export interface Przelewy24ClientOptions {
   posId: number;
   apiKey: string;
-  mode: Przelewy24Mode;
+  /** Selects the sandbox or live base URL. Defaults to `live`. */
+  mode?: Przelewy24Mode;
   /** Override base URL (mainly for tests). */
   apiUrl?: string;
 }
@@ -48,10 +49,11 @@ function base64Encode(value: string): string {
 }
 
 export function createPrzelewy24Client(options: Przelewy24ClientOptions): Przelewy24Client {
-  const base = options.apiUrl?.replace(/\/+$/, "") ?? `${modeBase(options.mode)}/api/v1`;
+  const mode = options.mode ?? "live";
+  const base = options.apiUrl?.replace(/\/+$/, "") ?? `${modeBase(mode)}/api/v1`;
   const trnBase = options.apiUrl
     ? new URL("/trnRequest", options.apiUrl).toString().replace(/\/+$/, "")
-    : `${modeBase(options.mode)}/trnRequest`;
+    : `${modeBase(mode)}/trnRequest`;
 
   const auth = `Basic ${base64Encode(`${options.posId}:${options.apiKey}`)}`;
 

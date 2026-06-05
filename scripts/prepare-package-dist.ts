@@ -20,6 +20,9 @@ type PackageJson = {
   exports: Record<string, ExportTarget>;
   bin?: Record<string, string>;
   dependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
+  peerDependenciesMeta?: Record<string, { optional?: boolean }>;
+  publishConfig?: Record<string, unknown>;
 };
 
 const repoRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -57,6 +60,9 @@ export async function preparePackageDist(packageRoot: string) {
         )
       : undefined,
     dependencies: rewriteWorkspaceDependencies(pkg.dependencies, pkg.version),
+    peerDependencies: rewriteWorkspaceDependencies(pkg.peerDependencies, pkg.version),
+    peerDependenciesMeta: pkg.peerDependenciesMeta,
+    publishConfig: pkg.publishConfig,
   });
 
   await writeFile(

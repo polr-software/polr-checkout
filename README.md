@@ -13,11 +13,18 @@ export const checkout = createCheckout({
   database: neonHttpDatabase(process.env.DATABASE_URL!),
   provider: przelewy24({
     merchantId: Number(process.env.PRZELEWY24_MERCHANT_ID!),
-    posId: Number(process.env.PRZELEWY24_POS_ID!),
+    // posId defaults to merchantId; set only if your POS id differs.
     crcKey: process.env.PRZELEWY24_CRC_KEY!,
     apiKey: process.env.PRZELEWY24_API_KEY!,
+    // mode defaults to "live"; set "sandbox" for testing.
     mode: "sandbox",
   }),
+  // Public origin of your app. Lets polr build an absolute webhook (statusUrl)
+  // and resolve relative returnUrls — required by Przelewy24.
+  appUrl: process.env.APP_URL!,
+  // Default return URL; supports the {ORDER_ID} placeholder. May be relative
+  // when appUrl is set. Override per order via createOrder({ returnUrl }).
+  returnUrl: "/checkout/success?token={ORDER_ID}",
   currency: "PLN",
   shipping: zoneShipping({
     zones: [

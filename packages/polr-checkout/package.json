@@ -1,10 +1,9 @@
 {
   "name": "@polr-software/checkout",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "One-shot payments kit for TypeScript apps",
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com",
-    "access": "restricted"
+    "access": "public"
   },
   "keywords": [
     "checkout",
@@ -72,18 +71,30 @@
     "db:generate": "drizzle-kit generate --config src/database/drizzle.config.ts"
   },
   "dependencies": {
-    "@neondatabase/serverless": "^1.1.0",
-    "@types/pg": "^8.18.0",
     "better-call": "^2.0.2",
-    "dotenv": "^17.3.1",
     "drizzle-orm": "^0.45.1",
-    "pg": "^8.20.0",
-    "typescript": "^5.9.2",
     "zod": "^4.0.0"
   },
+  "peerDependencies": {
+    "@neondatabase/serverless": "^1.1.0",
+    "pg": "^8.20.0"
+  },
+  "peerDependenciesMeta": {
+    "@neondatabase/serverless": {
+      "optional": true
+    },
+    "pg": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@neondatabase/serverless": "^1.1.0",
+    "@types/pg": "^8.18.0",
+    "dotenv": "^17.3.1",
     "drizzle-kit": "^0.31.5",
+    "pg": "^8.20.0",
     "tsdown": "^0.21.1",
+    "typescript": "^5.9.2",
     "vitest": "^4.0.18"
   }
 }

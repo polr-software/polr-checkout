@@ -62,6 +62,15 @@ export const resolveShipping = definePolrMethod(
         })
         .nullish(),
       coordinates: z.object({ lat: z.number(), lng: z.number() }).nullish(),
+      cart: z
+        .array(
+          z.object({
+            id: z.string().optional(),
+            quantity: z.number(),
+            unitAmount: z.number(),
+          }),
+        )
+        .optional(),
     }),
     route: {
       method: "POST",

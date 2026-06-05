@@ -31,8 +31,8 @@ export const POLR_ERROR_CODES = defineErrorCodes({
   SHIPPING_RESOLVER_MISSING: "shipping resolver is not configured",
 
   BASEPATH_INVALID: "basePath must start with a leading slash",
-  RETURN_URL_REQUIRED:
-    "A returnUrl is required when this method is called without a request context",
+  APP_URL_INVALID: "appUrl must be an absolute URL (e.g. https://shop.example.com)",
+  RETURN_URL_REQUIRED: "A returnUrl is required: pass it to createOrder or set options.returnUrl",
 });
 
 export type PolrErrorCode = keyof typeof POLR_ERROR_CODES;

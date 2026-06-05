@@ -26,7 +26,8 @@ export interface Przelewy24Options {
   posId?: number;
   crcKey: string;
   apiKey: string;
-  mode: Przelewy24Mode;
+  /** Selects the sandbox or live API. Defaults to `live`. */
+  mode?: Przelewy24Mode;
   /** Override the provider id (multiple Przelewy24 accounts in one app). */
   providerId?: string;
   /** Override the API base URL (tests). */
@@ -306,6 +307,7 @@ export function createPrzelewy24Provider(
   const merchantId = options.merchantId;
   const posId = options.posId ?? options.merchantId;
   const crcKey = options.crcKey;
+  const mode = options.mode ?? "live";
   const defaults = { ...DEFAULT_DEFAULTS, ...options.defaults };
   const id = options.providerId ?? "przelewy24";
 
@@ -412,13 +414,13 @@ export function createPrzelewy24Provider(
     },
 
     async check(): Promise<ProviderCheckResult> {
-      const mode = getEnvironment(options.mode);
+      const environment = getEnvironment(mode);
       try {
         await client.fetch("/testAccess");
-        return { ok: true, mode };
+        return { ok: true, mode: environment };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        return { ok: false, mode, error: message };
+        return { ok: false, mode: environment, error: message };
       }
     },
   };

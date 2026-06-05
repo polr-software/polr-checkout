@@ -7,6 +7,7 @@ import { assertValidPolrOptions } from "./validate-options";
 export interface PolrContext {
   options: PolrOptions;
   basePath: string;
+  appUrl?: string;
   store: PolrStore;
   provider: PaymentProvider;
   defaultCurrency: string;
@@ -20,12 +21,14 @@ export async function createContext(options: PolrOptions): Promise<PolrContext> 
   const store = createDatabase(options.database);
   const provider = options.provider.createAdapter();
   const basePath = options.basePath ?? "/polr";
+  const appUrl = options.appUrl ? options.appUrl.replace(/\/+$/, "") : undefined;
   const defaultCurrency = options.currency ?? "PLN";
   const minOrderAmount = options.minOrderAmount ?? 0;
 
   return {
     options,
     basePath,
+    appUrl,
     store,
     provider,
     defaultCurrency,

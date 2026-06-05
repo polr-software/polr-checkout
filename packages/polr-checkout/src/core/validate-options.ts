@@ -15,4 +15,20 @@ export function assertValidPolrOptions(options: PolrOptions): void {
       `basePath must start with "/", received "${options.basePath}"`,
     );
   }
+  if (options.appUrl !== undefined && !isAbsoluteUrl(options.appUrl)) {
+    throw PolrError.from(
+      "BAD_REQUEST",
+      POLR_ERROR_CODES.APP_URL_INVALID,
+      `appUrl must be an absolute URL, received "${options.appUrl}"`,
+    );
+  }
+}
+
+function isAbsoluteUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
 }

@@ -34,7 +34,12 @@ export interface CreateOrderInput {
     address?: NormalizedAddress | null;
     coordinates?: { lat: number; lng: number } | null;
   };
-  returnUrl: string;
+  /**
+   * Return URL for the buyer. Falls back to `options.returnUrl` when omitted.
+   * May be relative when `appUrl` is configured. Supports the `{ORDER_ID}`
+   * placeholder.
+   */
+  returnUrl?: string;
   metadata?: Record<string, string>;
   providerOptions?: Record<string, unknown>;
 }
@@ -118,7 +123,11 @@ export async function createOrder(
     }
 
     const id = generateOrderId();
-    const returnUrl = applyOrderIdPlaceholder(input.returnUrl, id);
+    const rawReturnUrl = input.returnUrl ?? ctx.options.returnUrl;
+    if (!rawReturnUrl) {
+      throw PolrError.from("BAD_REQUEST", POLR_ERROR_CODES.RETURN_URL_REQUIRED);
+    }
+    const returnUrl = resolvePublicUrl(ctx, applyOrderIdPlaceholder(rawReturnUrl, id));
     const statusUrl = buildStatusUrl(ctx);
     const metadata = input.metadata ?? {};
 
@@ -467,11 +476,24 @@ function normalizeCustomer(customer: CreateOrderInput["customer"]): OrderCustome
 }
 
 function buildStatusUrl(ctx: PolrContext): string {
-  return `${ctx.basePath}/webhook/${ctx.provider.id}`;
+  const path = `${ctx.basePath}/webhook/${ctx.provider.id}`;
+  return ctx.appUrl ? new URL(path, ctx.appUrl).toString() : path;
 }
 
 function applyOrderIdPlaceholder(value: string, id: string): string {
   return value.replaceAll("{ORDER_ID}", id);
+}
+
+function resolvePublicUrl(ctx: PolrContext, value: string): string {
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) return value;
+  if (!ctx.appUrl) {
+    throw PolrError.from(
+      "BAD_REQUEST",
+      POLR_ERROR_CODES.RETURN_URL_REQUIRED,
+      `Relative returnUrl "${value}" requires options.appUrl to be set`,
+    );
+  }
+  return new URL(value, ctx.appUrl).toString();
 }
 
 export { resolveShippingForOrder as _resolveShippingForOrder };
