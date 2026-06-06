@@ -86,6 +86,30 @@ export function notificationSign(params: NotificationSignParams): Promise<string
   });
 }
 
+export interface RefundNotificationSignParams {
+  orderId: number;
+  sessionId: string;
+  refundsUuid: string;
+  merchantId: number;
+  amount: number;
+  currency: string;
+  status: number;
+  crcKey: string;
+}
+
+export function refundNotificationSign(params: RefundNotificationSignParams): Promise<string> {
+  return sha384OfJson({
+    orderId: params.orderId,
+    sessionId: params.sessionId,
+    refundsUuid: params.refundsUuid,
+    merchantId: params.merchantId,
+    amount: params.amount,
+    currency: params.currency,
+    status: params.status,
+    crc: params.crcKey,
+  });
+}
+
 export function timingSafeEqualHex(left: string, right: string): boolean {
   if (!/^[a-f0-9]+$/i.test(left) || !/^[a-f0-9]+$/i.test(right)) return false;
   if (left.length !== right.length) return false;

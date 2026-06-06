@@ -8,7 +8,13 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 
-import type { OrderCustomer, OrderItem, OrderShippingSnapshot, OrderStatus } from "../types/models";
+import type {
+  OrderCustomer,
+  OrderItem,
+  OrderShippingSnapshot,
+  OrderStatus,
+  RefundStatus,
+} from "../types/models";
 
 const pgTable = pgTableCreator((name) => `polr_${name}`);
 
@@ -28,6 +34,7 @@ export const order = pgTable(
 
     amount: integer("amount").notNull(),
     subtotal: integer("subtotal").notNull(),
+    refundedAmount: integer("refunded_amount").notNull().default(0),
     currency: text("currency").notNull(),
     description: text("description").notNull(),
 
@@ -53,6 +60,29 @@ export const order = pgTable(
   (table) => [
     index("polr_order_status_created_idx").on(table.status, table.createdAt),
     index("polr_order_provider_idx").on(table.providerId, table.providerTransactionId),
+  ],
+);
+
+export const refund = pgTable(
+  "refund",
+  {
+    id: text("id").primaryKey(),
+    orderId: text("order_id").notNull(),
+    providerId: text("provider_id").notNull(),
+
+    amount: integer("amount").notNull(),
+    currency: text("currency").notNull(),
+    status: text("status").$type<RefundStatus>().notNull().default("pending"),
+    reason: text("reason"),
+
+    providerData: jsonb("provider_data").$type<Record<string, unknown>>().notNull().default({}),
+
+    createdAt,
+    updatedAt,
+  },
+  (table) => [
+    index("polr_refund_order_idx").on(table.orderId),
+    index("polr_refund_status_idx").on(table.status),
   ],
 );
 

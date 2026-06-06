@@ -13,12 +13,18 @@ export const POLR_ERROR_CODES = defineErrorCodes({
   PROVIDER_VERIFY_FAILED: "Provider transaction verification failed",
   PROVIDER_WEBHOOK_INVALID: "Provider webhook payload is invalid",
   PROVIDER_MERCHANT_MISMATCH: "Provider webhook came from a different merchant",
+  PROVIDER_REFUND_UNSUPPORTED: "Provider does not support refunds",
+  PROVIDER_REFUND_FAILED: "Provider refund request failed",
 
   ORDER_NOT_FOUND: "Order not found",
   ORDER_AMOUNT_MISMATCH: "Provider notification amount does not match order",
   ORDER_CURRENCY_MISMATCH: "Provider notification currency does not match order",
   ORDER_ALREADY_PAID: "Order has already been marked paid",
   ORDER_INVALID_STATE: "Order is in a state that cannot be transitioned",
+  ORDER_NOT_REFUNDABLE: "Order is not in a refundable state",
+
+  REFUND_NOT_FOUND: "Refund not found",
+  REFUND_AMOUNT_EXCEEDS: "Refund amount exceeds the refundable amount",
 
   AMOUNT_INVALID: "Order amount is invalid (must be a positive integer in minor units)",
   AMOUNT_BELOW_MINIMUM: "Order total is below the configured minimum",

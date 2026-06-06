@@ -17,7 +17,13 @@ export interface Przelewy24Client {
   authHeader: () => string;
   fetch: <TResponse>(
     path: string,
-    init?: { method?: "GET" | "POST" | "PUT"; body?: unknown; notFoundOk?: boolean },
+    init?: {
+      method?: "GET" | "POST" | "PUT";
+      body?: unknown;
+      notFoundOk?: boolean;
+      /** Skip the `responseCode === 0` check (e.g. `/testAccess` returns `{data:true}`). */
+      skipResponseCode?: boolean;
+    },
   ) => Promise<TResponse>;
 }
 
@@ -63,7 +69,12 @@ export function createPrzelewy24Client(options: Przelewy24ClientOptions): Przele
     trnRequestUrl: (token) => `${trnBase}/${encodeURIComponent(token)}`,
     async fetch<TResponse>(
       path: string,
-      init: { method?: "GET" | "POST" | "PUT"; body?: unknown; notFoundOk?: boolean } = {},
+      init: {
+        method?: "GET" | "POST" | "PUT";
+        body?: unknown;
+        notFoundOk?: boolean;
+        skipResponseCode?: boolean;
+      } = {},
     ): Promise<TResponse> {
       const response = await fetch(`${base}${path}`, {
         method: init.method ?? "GET",
@@ -92,7 +103,9 @@ export function createPrzelewy24Client(options: Przelewy24ClientOptions): Przele
         return null as TResponse;
       }
 
-      if (!response.ok || (data as Przelewy24ApiError | null)?.responseCode !== 0) {
+      const responseCodeOk =
+        init.skipResponseCode || (data as Przelewy24ApiError | null)?.responseCode === 0;
+      if (!response.ok || !responseCodeOk) {
         throw PolrError.from(
           "BAD_GATEWAY",
           POLR_ERROR_CODES.PROVIDER_TRANSACTION_FAILED,

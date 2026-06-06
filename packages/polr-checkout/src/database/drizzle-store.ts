@@ -1,8 +1,15 @@
 import { and, desc, eq, lt, sql } from "drizzle-orm";
 
 import { generateId } from "../core/utils";
-import { order, webhookEvent } from "./schema";
-import type { BeginWebhookEventInput, PolrDatabase, PolrDatabaseAdapter, PolrStore } from "./store";
+import { order, refund, webhookEvent } from "./schema";
+import type {
+  BeginWebhookEventInput,
+  PolrDatabase,
+  PolrDatabaseAdapter,
+  PolrStore,
+  SetRefundStatusInput,
+  SetRefundStatusResult,
+} from "./store";
 
 export function drizzleDatabase(db: PolrDatabase): PolrDatabaseAdapter {
   return { store: createDrizzleStore(db) };
@@ -91,6 +98,41 @@ export function createDrizzleStore(db: PolrDatabase): PolrStore {
       return updated ?? null;
     },
 
+    async createRefund(row) {
+      const [stored] = await db.insert(refund).values(row).returning();
+      if (!stored) {
+        throw new Error("Failed to insert refund");
+      }
+      return stored;
+    },
+
+    async getRefund(id) {
+      const row = await db.query.refund.findFirst({ where: eq(refund.id, id) });
+      return row ?? null;
+    },
+
+    async listRefunds(input = {}) {
+      const limit = Math.min(Math.max(input.limit ?? 20, 1), 100);
+      const conditions = [];
+      if (input.orderId) conditions.push(eq(refund.orderId, input.orderId));
+      if (input.status) conditions.push(eq(refund.status, input.status));
+      if (input.before) conditions.push(lt(refund.createdAt, input.before));
+
+      const rows = await db
+        .select()
+        .from(refund)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(refund.createdAt))
+        .limit(limit + 1);
+
+      const hasMore = rows.length > limit;
+      return { refunds: hasMore ? rows.slice(0, limit) : rows, hasMore };
+    },
+
+    async setRefundStatus(input) {
+      return setRefundStatus(db, input);
+    },
+
     async beginWebhookEvent(input) {
       return beginWebhookEvent(db, input);
     },
@@ -111,6 +153,60 @@ export function createDrizzleStore(db: PolrDatabase): PolrStore {
         );
     },
   };
+}
+
+async function setRefundStatus(
+  db: PolrDatabase,
+  input: SetRefundStatusInput,
+): Promise<SetRefundStatusResult | null> {
+  return db.transaction(async (tx) => {
+    const now = new Date();
+    const [updatedRefund] = await tx
+      .update(refund)
+      .set({
+        status: input.status,
+        ...(input.providerData
+          ? {
+              providerData: sql`${refund.providerData} || ${JSON.stringify(input.providerData)}::jsonb`,
+            }
+          : {}),
+        updatedAt: now,
+      })
+      .where(and(eq(refund.id, input.id), eq(refund.status, "pending")))
+      .returning();
+
+    if (!updatedRefund) return null;
+
+    const existingOrder = await tx.query.order.findFirst({
+      where: eq(order.id, updatedRefund.orderId),
+    });
+    if (!existingOrder) {
+      throw new Error(
+        `Refund ${updatedRefund.id} references missing order ${updatedRefund.orderId}`,
+      );
+    }
+
+    if (input.status === "rejected") {
+      return { order: existingOrder, refund: updatedRefund };
+    }
+
+    const refundedAmount = existingOrder.refundedAmount + updatedRefund.amount;
+    const canTransition =
+      existingOrder.status === "paid" || existingOrder.status === "partially_refunded";
+    const nextStatus = !canTransition
+      ? existingOrder.status
+      : refundedAmount >= existingOrder.amount
+        ? "refunded"
+        : "partially_refunded";
+
+    const [updatedOrder] = await tx
+      .update(order)
+      .set({ refundedAmount, status: nextStatus, updatedAt: now })
+      .where(eq(order.id, existingOrder.id))
+      .returning();
+
+    return { order: updatedOrder ?? existingOrder, refund: updatedRefund };
+  });
 }
 
 async function beginWebhookEvent(

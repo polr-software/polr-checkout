@@ -1,4 +1,10 @@
-import type { OrderCustomer, OrderItem, OrderShippingSnapshot, OrderStatus } from "./models";
+import type {
+  OrderCustomer,
+  OrderItem,
+  OrderShippingSnapshot,
+  OrderStatus,
+  RefundStatus,
+} from "./models";
 
 export interface PolrOrderEventPayload {
   id: string;
@@ -17,10 +23,23 @@ export interface PolrOrderEventPayload {
   createdAt: Date;
 }
 
+export interface PolrRefundEventPayload {
+  id: string;
+  orderId: string;
+  amount: number;
+  currency: string;
+  status: RefundStatus;
+  reason: string | null;
+  createdAt: Date;
+}
+
 export interface PolrEventMap {
   "order.created": { order: PolrOrderEventPayload };
   "order.paid": { order: PolrOrderEventPayload };
   "order.failed": { order: PolrOrderEventPayload; error: string | null };
+  "refund.created": { order: PolrOrderEventPayload; refund: PolrRefundEventPayload };
+  "refund.completed": { order: PolrOrderEventPayload; refund: PolrRefundEventPayload };
+  "refund.rejected": { order: PolrOrderEventPayload; refund: PolrRefundEventPayload };
 }
 
 export type PolrEventName = keyof PolrEventMap;
@@ -38,4 +57,9 @@ export type PolrEventHandlers = {
 
 export interface PolrHooks {
   orderPaid?: (input: { order: PolrOrderEventPayload }) => Promise<void> | void;
+  /** Runs when an order becomes fully refunded. */
+  orderRefunded?: (input: {
+    order: PolrOrderEventPayload;
+    refund: PolrRefundEventPayload;
+  }) => Promise<void> | void;
 }

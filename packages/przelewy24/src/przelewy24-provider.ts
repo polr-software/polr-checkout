@@ -2,9 +2,15 @@ import {
   POLR_ERROR_CODES,
   PolrError,
   type NormalizedNotification,
+  type NormalizedPaymentNotification,
+  type NormalizedRefundNotification,
   type PaymentProvider,
   type PolrProviderConfig,
   type ProviderCheckResult,
+  type ProviderRefundInput,
+  type ProviderRefundResult,
+  type ProviderSyncRefundInput,
+  type ProviderSyncRefundResult,
   type ProviderSyncTransactionInput,
   type ProviderSyncTransactionResult,
   type ProviderTransactionInput,
@@ -17,7 +23,13 @@ import {
   type Przelewy24Client,
   type Przelewy24Mode,
 } from "./przelewy24-client";
-import { notificationSign, registrationSign, timingSafeEqualHex, verificationSign } from "./sign";
+import {
+  notificationSign,
+  refundNotificationSign,
+  registrationSign,
+  timingSafeEqualHex,
+  verificationSign,
+} from "./sign";
 
 /** All credentials live with the constructor; nothing is read from env. */
 export interface Przelewy24Options {
@@ -104,6 +116,54 @@ interface RawNotification {
   sign: string;
 }
 
+interface RawRefundNotification {
+  merchantId: number;
+  orderId: number;
+  sessionId: string;
+  refundsUuid: string;
+  requestId?: string;
+  amount: number;
+  currency: string;
+  timestamp?: number;
+  status: number;
+  sign: string;
+}
+
+interface RefundResponseItem {
+  orderId: number;
+  sessionId: string;
+  amount: number;
+  description?: string;
+  status: boolean;
+  message?: string;
+}
+
+interface RefundResponse {
+  data: RefundResponseItem[];
+  responseCode: 0;
+}
+
+interface RefundInfoItem {
+  batchId?: number;
+  requestId?: string;
+  date?: string;
+  login?: string;
+  description?: string;
+  status: number;
+  amount: number;
+}
+
+interface RefundInfoResponse {
+  data: {
+    orderId: number;
+    sessionId: string;
+    amount: number;
+    currency: string;
+    refunds: RefundInfoItem[];
+  };
+  responseCode: 0;
+}
+
 function trim(value: string | null | undefined, max: number): string | undefined {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
@@ -115,7 +175,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function parseNotificationPayload(body: string): RawNotification {
+function parseJsonObject(body: string): Record<string, unknown> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(body);
@@ -125,8 +185,27 @@ function parseNotificationPayload(body: string): RawNotification {
   if (!isObject(parsed)) {
     throw PolrError.from("BAD_REQUEST", POLR_ERROR_CODES.PROVIDER_WEBHOOK_INVALID);
   }
+  return parsed;
+}
 
-  const required = [
+function assertRequiredFields(parsed: Record<string, unknown>, required: readonly string[]): void {
+  for (const key of required) {
+    if (parsed[key] === undefined) {
+      throw PolrError.from(
+        "BAD_REQUEST",
+        POLR_ERROR_CODES.PROVIDER_WEBHOOK_INVALID,
+        `Missing field "${key}"`,
+      );
+    }
+  }
+}
+
+function isRefundNotificationPayload(parsed: Record<string, unknown>): boolean {
+  return parsed.refundsUuid !== undefined || parsed.requestId !== undefined;
+}
+
+function parsePaymentNotificationPayload(parsed: Record<string, unknown>): RawNotification {
+  assertRequiredFields(parsed, [
     "merchantId",
     "posId",
     "sessionId",
@@ -137,16 +216,7 @@ function parseNotificationPayload(body: string): RawNotification {
     "methodId",
     "statement",
     "sign",
-  ] as const;
-  for (const key of required) {
-    if (parsed[key] === undefined) {
-      throw PolrError.from(
-        "BAD_REQUEST",
-        POLR_ERROR_CODES.PROVIDER_WEBHOOK_INVALID,
-        `Missing field "${key}"`,
-      );
-    }
-  }
+  ]);
 
   return {
     merchantId: Number(parsed.merchantId),
@@ -158,6 +228,32 @@ function parseNotificationPayload(body: string): RawNotification {
     orderId: Number(parsed.orderId),
     methodId: Number(parsed.methodId),
     statement: String(parsed.statement),
+    sign: String(parsed.sign),
+  };
+}
+
+function parseRefundNotificationPayload(parsed: Record<string, unknown>): RawRefundNotification {
+  assertRequiredFields(parsed, [
+    "merchantId",
+    "orderId",
+    "sessionId",
+    "refundsUuid",
+    "amount",
+    "currency",
+    "status",
+    "sign",
+  ]);
+
+  return {
+    merchantId: Number(parsed.merchantId),
+    orderId: Number(parsed.orderId),
+    sessionId: String(parsed.sessionId),
+    refundsUuid: String(parsed.refundsUuid),
+    requestId: parsed.requestId !== undefined ? String(parsed.requestId) : undefined,
+    amount: Number(parsed.amount),
+    currency: String(parsed.currency),
+    timestamp: parsed.timestamp !== undefined ? Number(parsed.timestamp) : undefined,
+    status: Number(parsed.status),
     sign: String(parsed.sign),
   };
 }
@@ -311,6 +407,75 @@ export function createPrzelewy24Provider(
   const defaults = { ...DEFAULT_DEFAULTS, ...options.defaults };
   const id = options.providerId ?? "przelewy24";
 
+  async function parsePaymentNotification(
+    notification: RawNotification,
+  ): Promise<NormalizedPaymentNotification> {
+    if (notification.merchantId !== merchantId || notification.posId !== posId) {
+      throw PolrError.from("UNAUTHORIZED", POLR_ERROR_CODES.PROVIDER_MERCHANT_MISMATCH);
+    }
+
+    const expected = await notificationSign({
+      merchantId: notification.merchantId,
+      posId: notification.posId,
+      sessionId: notification.sessionId,
+      amount: notification.amount,
+      originAmount: notification.originAmount,
+      currency: notification.currency,
+      orderId: notification.orderId,
+      methodId: notification.methodId,
+      statement: notification.statement,
+      crcKey,
+    });
+    if (!timingSafeEqualHex(notification.sign, expected)) {
+      throw PolrError.from("UNAUTHORIZED", POLR_ERROR_CODES.PROVIDER_SIGNATURE_INVALID);
+    }
+
+    return {
+      kind: "payment",
+      providerEventId: `${notification.sessionId}:${notification.orderId}`,
+      orderId: notification.sessionId,
+      providerTransactionId: String(notification.orderId),
+      amount: notification.amount,
+      currency: notification.currency,
+      providerMethodId: notification.methodId,
+      raw: notification as unknown as Record<string, unknown>,
+    };
+  }
+
+  async function parseRefundNotification(
+    notification: RawRefundNotification,
+  ): Promise<NormalizedRefundNotification> {
+    if (notification.merchantId !== merchantId) {
+      throw PolrError.from("UNAUTHORIZED", POLR_ERROR_CODES.PROVIDER_MERCHANT_MISMATCH);
+    }
+
+    const expected = await refundNotificationSign({
+      orderId: notification.orderId,
+      sessionId: notification.sessionId,
+      refundsUuid: notification.refundsUuid,
+      merchantId: notification.merchantId,
+      amount: notification.amount,
+      currency: notification.currency,
+      status: notification.status,
+      crcKey,
+    });
+    if (!timingSafeEqualHex(notification.sign, expected)) {
+      throw PolrError.from("UNAUTHORIZED", POLR_ERROR_CODES.PROVIDER_SIGNATURE_INVALID);
+    }
+
+    return {
+      kind: "refund",
+      providerEventId: `refund:${notification.refundsUuid}:${notification.status}`,
+      orderId: notification.sessionId,
+      providerTransactionId: String(notification.orderId),
+      refundId: notification.refundsUuid,
+      amount: notification.amount,
+      currency: notification.currency,
+      status: notification.status === 0 ? "completed" : "rejected",
+      raw: notification as unknown as Record<string, unknown>,
+    };
+  }
+
   return {
     id,
     name: "Przelewy24",
@@ -332,37 +497,83 @@ export function createPrzelewy24Provider(
     },
 
     async parseNotification({ body }): Promise<NormalizedNotification> {
-      const notification = parseNotificationPayload(body);
+      const parsed = parseJsonObject(body);
+      if (isRefundNotificationPayload(parsed)) {
+        return parseRefundNotification(parseRefundNotificationPayload(parsed));
+      }
+      return parsePaymentNotification(parsePaymentNotificationPayload(parsed));
+    },
 
-      if (notification.merchantId !== merchantId || notification.posId !== posId) {
-        throw PolrError.from("UNAUTHORIZED", POLR_ERROR_CODES.PROVIDER_MERCHANT_MISMATCH);
+    async refund(input: ProviderRefundInput): Promise<ProviderRefundResult> {
+      const orderIdNumber = Number(input.providerTransactionId);
+      if (!Number.isFinite(orderIdNumber)) {
+        throw PolrError.from(
+          "BAD_REQUEST",
+          POLR_ERROR_CODES.PROVIDER_REFUND_FAILED,
+          `providerTransactionId is not numeric: ${input.providerTransactionId}`,
+        );
       }
 
-      const expected = await notificationSign({
-        merchantId: notification.merchantId,
-        posId: notification.posId,
-        sessionId: notification.sessionId,
-        amount: notification.amount,
-        originAmount: notification.originAmount,
-        currency: notification.currency,
-        orderId: notification.orderId,
-        methodId: notification.methodId,
-        statement: notification.statement,
-        crcKey,
+      const body = omitUndefined({
+        requestId: input.refundId,
+        refundsUuid: input.refundId,
+        urlStatus: input.statusUrl,
+        refunds: [
+          omitUndefined({
+            orderId: orderIdNumber,
+            sessionId: input.orderId,
+            amount: input.amount,
+            description: trim(input.reason, 35),
+          }),
+        ],
       });
-      if (!timingSafeEqualHex(notification.sign, expected)) {
-        throw PolrError.from("UNAUTHORIZED", POLR_ERROR_CODES.PROVIDER_SIGNATURE_INVALID);
+
+      let result: RefundResponse;
+      try {
+        result = await client.fetch<RefundResponse>("/transaction/refund", {
+          method: "POST",
+          body,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw PolrError.from("BAD_GATEWAY", POLR_ERROR_CODES.PROVIDER_REFUND_FAILED, message);
+      }
+
+      const item = result.data?.[0];
+      if (!item || item.status !== true) {
+        throw PolrError.from(
+          "BAD_GATEWAY",
+          POLR_ERROR_CODES.PROVIDER_REFUND_FAILED,
+          item?.message ?? "Przelewy24 refund was not accepted",
+        );
       }
 
       return {
-        providerEventId: `${notification.sessionId}:${notification.orderId}`,
-        orderId: notification.sessionId,
-        providerTransactionId: String(notification.orderId),
-        amount: notification.amount,
-        currency: notification.currency,
-        providerMethodId: notification.methodId,
-        raw: notification as unknown as Record<string, unknown>,
+        refundId: input.refundId,
+        status: "pending",
+        providerData: { refundResponse: result.data },
       };
+    },
+
+    async syncRefund(input: ProviderSyncRefundInput): Promise<ProviderSyncRefundResult> {
+      const result = await client.fetch<RefundInfoResponse | null>(
+        `/refund/by/orderId/${encodeURIComponent(input.providerTransactionId)}`,
+        { notFoundOk: true },
+      );
+
+      const match = result?.data?.refunds?.find((entry) => entry.requestId === input.refundId);
+      if (!match) {
+        return { status: "unknown" };
+      }
+
+      const providerData = { lastRefundCheck: match };
+      if (match.status === 1) {
+        return { amount: match.amount, providerData, status: "completed" };
+      }
+      if (match.status === 4) {
+        return { providerData, status: "rejected" };
+      }
+      return { providerData, status: "pending" };
     },
 
     async verifyTransaction(input: ProviderVerifyInput): Promise<void> {
@@ -416,8 +627,18 @@ export function createPrzelewy24Provider(
     async check(): Promise<ProviderCheckResult> {
       const environment = getEnvironment(mode);
       try {
-        await client.fetch("/testAccess");
-        return { ok: true, mode: environment };
+        // `/testAccess` returns `{data: true}` and has no `responseCode` field.
+        const result = await client.fetch<{ data?: boolean }>("/testAccess", {
+          skipResponseCode: true,
+        });
+        if (result?.data === true) {
+          return { ok: true, mode: environment };
+        }
+        return {
+          ok: false,
+          mode: environment,
+          error: `Unexpected /testAccess response: ${JSON.stringify(result)}`,
+        };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         return { ok: false, mode: environment, error: message };

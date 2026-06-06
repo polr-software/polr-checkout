@@ -2,12 +2,17 @@ import type { PolrContext } from "../core/context";
 import { PolrError, POLR_ERROR_CODES } from "../core/errors";
 import { generateId } from "../core/utils";
 import {
+  applyRefundResolution,
   emitEvent,
   markOrderFailed,
   processProviderPaidOrder,
   toEventPayload,
 } from "../order/order.service";
-import type { NormalizedNotification } from "../providers/provider";
+import type {
+  NormalizedNotification,
+  NormalizedPaymentNotification,
+  NormalizedRefundNotification,
+} from "../providers/provider";
 
 export interface HandleWebhookInput {
   body: string;
@@ -22,6 +27,16 @@ function errorDetail(error: unknown): string {
 async function processNotification(
   ctx: PolrContext,
   notification: NormalizedNotification,
+): Promise<void> {
+  if (notification.kind === "refund") {
+    return processRefundNotification(ctx, notification);
+  }
+  return processPaymentNotification(ctx, notification);
+}
+
+async function processPaymentNotification(
+  ctx: PolrContext,
+  notification: NormalizedPaymentNotification,
 ): Promise<void> {
   const existing = await ctx.store.getOrder(notification.orderId);
   if (!existing) {
@@ -71,6 +86,43 @@ async function processNotification(
       providerMethodId: notification.providerMethodId ?? null,
     },
     providerTransactionId: notification.providerTransactionId,
+  });
+}
+
+async function processRefundNotification(
+  ctx: PolrContext,
+  notification: NormalizedRefundNotification,
+): Promise<void> {
+  const order = await ctx.store.getOrder(notification.orderId);
+  if (!order) {
+    throw PolrError.from("NOT_FOUND", POLR_ERROR_CODES.ORDER_NOT_FOUND);
+  }
+  if (order.currency.toUpperCase() !== notification.currency.toUpperCase()) {
+    throw PolrError.from(
+      "CONFLICT",
+      POLR_ERROR_CODES.ORDER_CURRENCY_MISMATCH,
+      `Refund currency ${notification.currency} does not match order currency ${order.currency}`,
+    );
+  }
+
+  const existing = await ctx.store.getRefund(notification.refundId);
+  if (!existing) {
+    // Refund initiated outside polr (e.g. the Przelewy24 panel) — reconcile it.
+    await ctx.store.createRefund({
+      id: notification.refundId,
+      orderId: order.id,
+      providerId: ctx.provider.id,
+      amount: notification.amount,
+      currency: notification.currency,
+      reason: null,
+      status: "pending",
+    });
+  }
+
+  await applyRefundResolution(ctx, {
+    refundId: notification.refundId,
+    status: notification.status,
+    providerData: { lastRefundNotification: notification.raw },
   });
 }
 
@@ -152,7 +204,9 @@ export async function handleWebhook(
         providerId: ctx.provider.id,
         status: "failed",
       });
-      await failWebhookOrder(ctx, { error, orderId: notification.orderId });
+      if (notification.kind === "payment") {
+        await failWebhookOrder(ctx, { error, orderId: notification.orderId });
+      }
       throw error;
     }
 

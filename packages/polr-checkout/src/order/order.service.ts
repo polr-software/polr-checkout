@@ -1,16 +1,23 @@
 import type { PolrContext } from "../core/context";
 import { PolrError, POLR_ERROR_CODES } from "../core/errors";
-import { generateOrderId } from "../core/utils";
+import { generateId, generateOrderId } from "../core/utils";
 import type { NormalizedAddress, ProviderTransactionItem } from "../providers/provider";
 import type { ShippingResult } from "../shipping/shipping";
-import type { PolrEventName, PolrEventMap, PolrOrderEventPayload } from "../types/events";
+import type {
+  PolrEventName,
+  PolrEventMap,
+  PolrOrderEventPayload,
+  PolrRefundEventPayload,
+} from "../types/events";
 import type {
   NewStoredOrder,
   OrderCustomer,
   OrderItem,
   OrderShippingSnapshot,
   OrderStatus,
+  RefundStatus,
   StoredOrder,
+  StoredRefund,
 } from "../types/models";
 
 export interface CreateOrderInput {
@@ -74,6 +81,36 @@ export interface CancelOrderInput {
 export interface CancelOrderResult {
   id: string;
   status: OrderStatus;
+}
+
+export interface RefundOrderInput {
+  id: string;
+  /** Minor units. Defaults to the full remaining refundable amount. */
+  amount?: number;
+  reason?: string;
+}
+
+export interface RefundOrderResult {
+  refundId: string;
+  status: RefundStatus;
+  amount: number;
+}
+
+export interface SyncRefundInput {
+  id: string;
+  refundId: string;
+}
+
+export interface ListRefundsInput {
+  orderId?: string;
+  status?: RefundStatus;
+  limit?: number;
+  before?: Date;
+}
+
+export interface ListRefundsResult {
+  refunds: StoredRefund[];
+  hasMore: boolean;
 }
 
 export interface SyncOrderInput {
@@ -265,6 +302,171 @@ export async function cancelOrder(
   return { id: updated.id, status: updated.status };
 }
 
+export async function refundOrder(
+  ctx: PolrContext,
+  input: RefundOrderInput,
+): Promise<RefundOrderResult> {
+  return ctx.logger.trace.run("rfn", async () => {
+    const order = await getOrder(ctx, input.id);
+    if (!order) {
+      throw PolrError.from("NOT_FOUND", POLR_ERROR_CODES.ORDER_NOT_FOUND);
+    }
+    if (order.status !== "paid" && order.status !== "partially_refunded") {
+      throw PolrError.from(
+        "CONFLICT",
+        POLR_ERROR_CODES.ORDER_NOT_REFUNDABLE,
+        `Order ${order.id} is ${order.status}`,
+      );
+    }
+    if (!order.providerTransactionId) {
+      throw PolrError.from(
+        "CONFLICT",
+        POLR_ERROR_CODES.ORDER_NOT_REFUNDABLE,
+        `Order ${order.id} has no provider transaction id`,
+      );
+    }
+    if (!ctx.provider.refund) {
+      throw PolrError.from("BAD_REQUEST", POLR_ERROR_CODES.PROVIDER_REFUND_UNSUPPORTED);
+    }
+
+    const remaining = order.amount - order.refundedAmount;
+    const amount = input.amount ?? remaining;
+    if (!Number.isInteger(amount) || amount <= 0) {
+      throw PolrError.from("BAD_REQUEST", POLR_ERROR_CODES.AMOUNT_INVALID);
+    }
+    if (amount > remaining) {
+      throw PolrError.from(
+        "CONFLICT",
+        POLR_ERROR_CODES.REFUND_AMOUNT_EXCEEDS,
+        `Refund amount ${amount} exceeds remaining refundable ${remaining}`,
+      );
+    }
+
+    const refundId = generateId("rfn");
+    const stored = await ctx.store.createRefund({
+      id: refundId,
+      orderId: order.id,
+      providerId: ctx.provider.id,
+      amount,
+      currency: order.currency,
+      reason: input.reason ?? null,
+      status: "pending",
+    });
+    await emitEvent(ctx, "refund.created", {
+      order: toEventPayload(order),
+      refund: toRefundEventPayload(stored),
+    });
+
+    let result;
+    try {
+      result = await ctx.provider.refund({
+        orderId: order.id,
+        providerTransactionId: order.providerTransactionId,
+        refundId,
+        amount,
+        currency: order.currency,
+        reason: input.reason,
+        statusUrl: buildStatusUrl(ctx),
+      });
+    } catch (error) {
+      await applyRefundResolution(ctx, {
+        refundId,
+        status: "rejected",
+        providerData: { error: error instanceof Error ? error.message : String(error) },
+      });
+      if (error instanceof PolrError) throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw PolrError.from("BAD_GATEWAY", POLR_ERROR_CODES.PROVIDER_REFUND_FAILED, message);
+    }
+
+    if (result.status === "completed" || result.status === "rejected") {
+      await applyRefundResolution(ctx, {
+        refundId,
+        status: result.status,
+        providerData: result.providerData,
+      });
+    }
+
+    return { refundId, status: result.status as RefundStatus, amount };
+  });
+}
+
+export async function syncRefund(
+  ctx: PolrContext,
+  input: SyncRefundInput,
+): Promise<StoredRefund | null> {
+  const refund = await ctx.store.getRefund(input.refundId);
+  if (!refund || refund.orderId !== input.id) {
+    throw PolrError.from("NOT_FOUND", POLR_ERROR_CODES.REFUND_NOT_FOUND);
+  }
+  if (refund.status !== "pending" || !ctx.provider.syncRefund) {
+    return refund;
+  }
+  const order = await getOrder(ctx, refund.orderId);
+  if (!order || !order.providerTransactionId) {
+    return refund;
+  }
+
+  const result = await ctx.provider.syncRefund({
+    orderId: order.id,
+    providerTransactionId: order.providerTransactionId,
+    refundId: refund.id,
+  });
+  if (result.status === "completed" || result.status === "rejected") {
+    await applyRefundResolution(ctx, {
+      refundId: refund.id,
+      status: result.status,
+      providerData: result.providerData,
+    });
+  }
+
+  return ctx.store.getRefund(refund.id);
+}
+
+export async function listRefunds(
+  ctx: PolrContext,
+  input: ListRefundsInput = {},
+): Promise<ListRefundsResult> {
+  return ctx.store.listRefunds(input);
+}
+
+export async function getRefund(ctx: PolrContext, id: string): Promise<StoredRefund | null> {
+  return ctx.store.getRefund(id);
+}
+
+/**
+ * Resolves a pending refund to `completed`/`rejected`, updates the order and
+ * emits the matching events. Shared by `refundOrder`, the refund webhook and
+ * `syncRefund`. Idempotent: a no-op when the refund is no longer pending.
+ */
+export async function applyRefundResolution(
+  ctx: PolrContext,
+  input: {
+    refundId: string;
+    status: "completed" | "rejected";
+    providerData?: Record<string, unknown>;
+  },
+): Promise<void> {
+  const result = await ctx.store.setRefundStatus({
+    id: input.refundId,
+    status: input.status,
+    providerData: input.providerData,
+  });
+  if (!result) return;
+
+  const orderPayload = toEventPayload(result.order);
+  const refundPayload = toRefundEventPayload(result.refund);
+
+  if (result.refund.status === "completed") {
+    await emitEvent(ctx, "refund.completed", { order: orderPayload, refund: refundPayload });
+    if (result.order.status === "refunded") {
+      await runOrderRefundedHook(ctx, { order: orderPayload, refund: refundPayload });
+    }
+  } else {
+    await emitEvent(ctx, "refund.rejected", { order: orderPayload, refund: refundPayload });
+  }
+}
+
 export async function resolveShipping(
   ctx: PolrContext,
   input: ResolveShippingInput,
@@ -388,6 +590,18 @@ export function toEventPayload(row: StoredOrder): PolrOrderEventPayload {
   };
 }
 
+export function toRefundEventPayload(row: StoredRefund): PolrRefundEventPayload {
+  return {
+    id: row.id,
+    orderId: row.orderId,
+    amount: row.amount,
+    currency: row.currency,
+    status: row.status,
+    reason: row.reason,
+    createdAt: row.createdAt,
+  };
+}
+
 export async function emitEvent<TName extends PolrEventName>(
   ctx: PolrContext,
   name: TName,
@@ -422,6 +636,13 @@ export async function runOrderPaidHook(
   payload: PolrEventMap["order.paid"],
 ): Promise<void> {
   await ctx.options.hooks?.orderPaid?.(payload);
+}
+
+export async function runOrderRefundedHook(
+  ctx: PolrContext,
+  payload: PolrEventMap["refund.completed"],
+): Promise<void> {
+  await ctx.options.hooks?.orderRefunded?.(payload);
 }
 
 async function resolveShippingForOrder(

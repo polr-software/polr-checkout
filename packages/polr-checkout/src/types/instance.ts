@@ -7,11 +7,17 @@ import type {
   GetOrderResult,
   ListOrdersInput,
   ListOrdersResult,
+  ListRefundsInput,
+  ListRefundsResult,
+  RefundOrderInput,
+  RefundOrderResult,
   ResolveShippingInput,
   ResolveShippingResult,
   SyncOrderInput,
   SyncOrderResult,
+  SyncRefundInput,
 } from "../order/order.service";
+import type { StoredRefund } from "./models";
 import type { PolrOptions } from "./options";
 
 export interface PolrInstance<TOptions extends PolrOptions = PolrOptions> {
@@ -25,6 +31,13 @@ export interface PolrInstance<TOptions extends PolrOptions = PolrOptions> {
   syncOrder: (input: SyncOrderInput) => Promise<SyncOrderResult | null>;
   cancelOrder: (input: CancelOrderInput) => Promise<CancelOrderResult>;
   resolveShipping: (input: ResolveShippingInput) => Promise<ResolveShippingResult | null>;
+
+  /** Initiates a refund (full or partial) for a paid order. */
+  refundOrder: (input: RefundOrderInput) => Promise<RefundOrderResult>;
+  getRefund: (id: string) => Promise<StoredRefund | null>;
+  listRefunds: (input?: ListRefundsInput) => Promise<ListRefundsResult>;
+  /** Reconciles a pending refund with the payment provider. */
+  syncRefund: (input: SyncRefundInput) => Promise<StoredRefund | null>;
 
   $context: Promise<PolrContext>;
 }

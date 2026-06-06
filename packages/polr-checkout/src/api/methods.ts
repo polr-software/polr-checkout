@@ -1,12 +1,24 @@
 import { createRouter } from "better-call";
 
 import type { PolrContext } from "../core/context";
-import { cancelOrder, getOrder, resolveShipping } from "../order/order.api";
+import {
+  cancelOrder,
+  getOrder,
+  getRefund,
+  listRefunds,
+  refundOrder,
+  resolveShipping,
+  syncRefund,
+} from "../order/order.api";
 import { receiveWebhook } from "../webhook/webhook.api";
 
 export const methods = {
   getOrder,
   cancelOrder,
+  refundOrder,
+  listRefunds,
+  getRefund,
+  syncRefund,
   resolveShipping,
   handleWebhook: receiveWebhook,
 } as const;

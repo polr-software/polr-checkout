@@ -5,7 +5,11 @@ import { PolrError, POLR_ERROR_CODES } from "../core/errors";
 import {
   cancelOrder as cancelOrderService,
   getOrder as getOrderService,
+  getRefund as getRefundService,
+  listRefunds as listRefundsService,
+  refundOrder as refundOrderService,
   resolveShipping as resolveShippingService,
+  syncRefund as syncRefundService,
 } from "./order.service";
 
 const idSchema = z.object({ id: z.string().min(1) });
@@ -48,6 +52,80 @@ export const cancelOrder = definePolrMethod(
     },
   },
   async (ctx) => cancelOrderService(ctx.polr, ctx.input),
+);
+
+export const refundOrder = definePolrMethod(
+  {
+    input: z.object({
+      id: z.string().min(1),
+      amount: z.number().int().positive().optional(),
+      reason: z.string().optional(),
+    }),
+    route: {
+      method: "POST",
+      path: "/orders/:id/refund",
+      resolveInput: async (ctx) => {
+        const body = (await ctx.request?.json().catch(() => null)) as {
+          amount?: number;
+          reason?: string;
+        } | null;
+        return { id: ctx.params?.id, amount: body?.amount, reason: body?.reason };
+      },
+    },
+  },
+  async (ctx) => refundOrderService(ctx.polr, ctx.input),
+);
+
+export const listRefunds = definePolrMethod(
+  {
+    input: z.object({ orderId: z.string().optional() }),
+    route: {
+      method: "GET",
+      path: "/orders/:id/refunds",
+      resolveInput: (ctx) => ({ orderId: ctx.params?.id }),
+    },
+  },
+  async (ctx) => listRefundsService(ctx.polr, ctx.input),
+);
+
+export const getRefund = definePolrMethod(
+  {
+    input: idSchema,
+    route: {
+      method: "GET",
+      path: "/refunds/:id",
+      resolveInput: (ctx) => ({ id: ctx.params?.id }),
+    },
+  },
+  async (ctx) => {
+    const refund = await getRefundService(ctx.polr, ctx.input.id);
+    if (!refund) {
+      throw PolrError.from("NOT_FOUND", POLR_ERROR_CODES.REFUND_NOT_FOUND);
+    }
+    return {
+      id: refund.id,
+      orderId: refund.orderId,
+      amount: refund.amount,
+      currency: refund.currency,
+      status: refund.status,
+      reason: refund.reason,
+      createdAt: refund.createdAt,
+    };
+  },
+);
+
+export const syncRefund = definePolrMethod(
+  {
+    route: {
+      method: "POST",
+      path: "/orders/:id/refunds/:refundId/sync",
+      resolveInput: (ctx) => ({
+        id: ctx.params?.id ?? "",
+        refundId: ctx.params?.refundId ?? "",
+      }),
+    },
+  },
+  async (ctx) => syncRefundService(ctx.polr, ctx.input),
 );
 
 export const resolveShipping = definePolrMethod(

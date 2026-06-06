@@ -2,11 +2,50 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { PolrContext } from "../core/context";
 import type { PolrInternalLogger } from "../core/logger";
-import type { PolrStore } from "../database/store";
+import type {
+  ListStoredRefundsInput,
+  PolrStore,
+  SetRefundStatusInput,
+  SetRefundStatusResult,
+} from "../database/store";
 import { handleWebhook } from "../webhook/webhook.service";
 import type { NormalizedNotification, PaymentProvider } from "../providers/provider";
 import type { PolrHooks } from "../types/events";
-import type { NewStoredOrder, StoredOrder } from "../types/models";
+import type { NewStoredOrder, NewStoredRefund, StoredOrder, StoredRefund } from "../types/models";
+
+function applyFakeRefundStatus(
+  orders: Map<string, StoredOrder>,
+  refunds: Map<string, StoredRefund>,
+  input: SetRefundStatusInput,
+): SetRefundStatusResult | null {
+  const refund = refunds.get(input.id);
+  if (!refund || refund.status !== "pending") return null;
+  refund.status = input.status;
+  refund.providerData = { ...refund.providerData, ...input.providerData };
+  refund.updatedAt = new Date();
+  const order = orders.get(refund.orderId);
+  if (!order) throw new Error(`missing order ${refund.orderId}`);
+  if (input.status === "completed") {
+    order.refundedAmount += refund.amount;
+    if (order.status === "paid" || order.status === "partially_refunded") {
+      order.status = order.refundedAmount >= order.amount ? "refunded" : "partially_refunded";
+    }
+    order.updatedAt = new Date();
+  }
+  return { order, refund };
+}
+
+function fakeRefundFrom(row: NewStoredRefund): StoredRefund {
+  const now = new Date();
+  return {
+    createdAt: now,
+    providerData: {},
+    reason: null,
+    status: "pending",
+    updatedAt: now,
+    ...row,
+  } as StoredRefund;
+}
 
 type WebhookState = {
   error: string | null;
@@ -17,6 +56,7 @@ type WebhookState = {
 
 class FakeStore implements PolrStore {
   orders = new Map<string, StoredOrder>();
+  refunds = new Map<string, StoredRefund>();
   webhookEvents = new Map<string, WebhookState>();
 
   async createOrder(row: NewStoredOrder): Promise<StoredOrder> {
@@ -31,6 +71,27 @@ class FakeStore implements PolrStore {
 
   async listOrders() {
     return { hasMore: false, orders: Array.from(this.orders.values()) };
+  }
+
+  async createRefund(row: NewStoredRefund): Promise<StoredRefund> {
+    const stored = fakeRefundFrom(row);
+    this.refunds.set(stored.id, stored);
+    return stored;
+  }
+
+  async getRefund(id: string): Promise<StoredRefund | null> {
+    return this.refunds.get(id) ?? null;
+  }
+
+  async listRefunds(input: ListStoredRefundsInput = {}) {
+    let rows = Array.from(this.refunds.values());
+    if (input.orderId) rows = rows.filter((r) => r.orderId === input.orderId);
+    if (input.status) rows = rows.filter((r) => r.status === input.status);
+    return { hasMore: false, refunds: rows };
+  }
+
+  async setRefundStatus(input: SetRefundStatusInput): Promise<SetRefundStatusResult | null> {
+    return applyFakeRefundStatus(this.orders, this.refunds, input);
   }
 
   async setOrderCancelled(input: { id: string; reason?: string }): Promise<StoredOrder | null> {
@@ -137,6 +198,7 @@ function createOrder(overrides: Partial<StoredOrder> = {}): StoredOrder {
     providerData: {},
     providerId: "test",
     providerTransactionId: null,
+    refundedAmount: 0,
     returnUrl: null,
     shipping: null,
     status: "pending",
@@ -150,6 +212,7 @@ function createNotification(
   overrides: Partial<NormalizedNotification> = {},
 ): NormalizedNotification {
   return {
+    kind: "payment",
     amount: 1000,
     currency: "PLN",
     orderId: "order_1",
@@ -157,7 +220,7 @@ function createNotification(
     providerTransactionId: "tx_1",
     raw: { ok: true },
     ...overrides,
-  };
+  } as NormalizedNotification;
 }
 
 function createContext(input: {

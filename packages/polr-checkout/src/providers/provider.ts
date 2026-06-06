@@ -39,7 +39,8 @@ export interface ProviderTransactionResult {
   providerData?: Record<string, unknown>;
 }
 
-export interface NormalizedNotification {
+export interface NormalizedPaymentNotification {
+  kind: "payment";
   /**
    * Stable identifier of this provider event. Used for idempotency in the
    * `polr_webhook_event` table. If the provider doesn't supply one, the
@@ -54,6 +55,23 @@ export interface NormalizedNotification {
   providerMethodId?: string | number | null;
   raw: Record<string, unknown>;
 }
+
+export interface NormalizedRefundNotification {
+  kind: "refund";
+  /** Stable identifier of this refund event. Used for webhook idempotency. */
+  providerEventId: string;
+  orderId: string;
+  providerTransactionId: string;
+  /** The polr refund id (provider `refundsUuid`). */
+  refundId: string;
+  amount: number;
+  currency: string;
+  status: "completed" | "rejected";
+  raw: Record<string, unknown>;
+}
+
+/** A provider notification, discriminated by `kind`. */
+export type NormalizedNotification = NormalizedPaymentNotification | NormalizedRefundNotification;
 
 export interface ProviderVerifyInput {
   orderId: string;
@@ -83,13 +101,31 @@ export interface ProviderSyncTransactionResult {
 export interface ProviderRefundInput {
   orderId: string;
   providerTransactionId: string;
-  amount?: number;
+  /** polr-generated id, sent to the provider for idempotency (P24 `refundsUuid`). */
+  refundId: string;
+  amount: number;
+  currency: string;
   reason?: string;
+  /** URL the provider should call with the async refund notification. */
+  statusUrl?: string;
 }
 
 export interface ProviderRefundResult {
   refundId: string;
   status: "pending" | "completed" | "rejected";
+  providerData?: Record<string, unknown>;
+}
+
+export interface ProviderSyncRefundInput {
+  orderId: string;
+  providerTransactionId: string;
+  refundId: string;
+}
+
+export interface ProviderSyncRefundResult {
+  status: "pending" | "completed" | "rejected" | "unknown";
+  amount?: number;
+  providerData?: Record<string, unknown>;
 }
 
 export interface ProviderCheckResult {
@@ -116,8 +152,11 @@ export interface PaymentProvider {
   /** Syncs local order state from provider state when no webhook is available yet. */
   syncTransaction?(input: ProviderSyncTransactionInput): Promise<ProviderSyncTransactionResult>;
 
-  /** Refund support; reserved for v2. */
+  /** Initiates a refund (e.g. Przelewy24 POST /transaction/refund). */
   refund?(input: ProviderRefundInput): Promise<ProviderRefundResult>;
+
+  /** Reconciles refund state from the provider when no notification arrived. */
+  syncRefund?(input: ProviderSyncRefundInput): Promise<ProviderSyncRefundResult>;
 
   check?(): Promise<ProviderCheckResult>;
 }

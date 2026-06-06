@@ -3,9 +3,13 @@ import {
   cancelOrder as cancelOrderService,
   createOrder as createOrderService,
   getOrder as getOrderService,
+  getRefund as getRefundService,
   listOrders as listOrdersService,
+  listRefunds as listRefundsService,
+  refundOrder as refundOrderService,
   resolveShipping as resolveShippingService,
   syncOrder as syncOrderService,
+  syncRefund as syncRefundService,
 } from "../order/order.service";
 import type { PolrInstance } from "../types/instance";
 import type { ExactOptions, PolrOptions } from "../types/options";
@@ -71,6 +75,26 @@ export function createCheckout<const TOptions extends PolrOptions>(
     async resolveShipping(input) {
       const ctx = await getContext();
       return resolveShippingService(ctx, input);
+    },
+
+    async refundOrder(input) {
+      const ctx = await getContext();
+      return refundOrderService(ctx, input);
+    },
+
+    async getRefund(id) {
+      const ctx = await getContext();
+      return getRefundService(ctx, id);
+    },
+
+    async listRefunds(input) {
+      const ctx = await getContext();
+      return listRefundsService(ctx, input);
+    },
+
+    async syncRefund(input) {
+      const ctx = await getContext();
+      return syncRefundService(ctx, input);
     },
 
     get $context() {

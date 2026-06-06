@@ -76,8 +76,65 @@ local order. For Przelewy24 this matters because `urlStatus` notifications are
 sent only for correct payments. A failed or abandoned transaction may never hit
 your webhook, so the provider adapter checks `transaction/by/sessionId`.
 
-Status: alpha. v1 supports Przelewy24 only. Refunds and additional providers
-land in a later iteration.
+## Refunds
+
+Refund a paid order in full or in part. Each refund is stored as its own row
+(`polr_refund`), so one order can have several partial refunds.
+
+```ts
+// Full refund of the remaining balance:
+const { refundId, status } = await checkout.refundOrder({ id: orderId });
+
+// Partial refund (minor units), with a reason shown on the transfer:
+await checkout.refundOrder({
+  id: orderId,
+  amount: 500,
+  reason: "Out of stock: 1 item",
+});
+```
+
+Refunds are asynchronous. `refundOrder` returns `status: "pending"` once the
+provider accepts the request — the money has not moved yet. The final state
+arrives as a provider notification on the same webhook route, which polr verifies
+and applies:
+
+- the refund row becomes `completed` or `rejected`
+- on `completed`, the order's `refundedAmount` grows and its status moves to
+  `partially_refunded`, then `refunded` once the full amount is returned
+
+React to refunds with events (analytics/logging) or the blocking `orderRefunded`
+hook (fired only on a full refund):
+
+```ts
+createCheckout({
+  // ...
+  hooks: {
+    orderRefunded: async ({ order, refund }) => {
+      // restock, issue a credit note
+    },
+  },
+  events: {
+    "refund.completed": async ({ payload }) => {
+      // payload.order, payload.refund
+    },
+  },
+});
+```
+
+If the async notification never arrives, reconcile a pending refund with the
+provider, and list an order's refunds:
+
+```ts
+const refund = await checkout.syncRefund({ id: orderId, refundId });
+const { refunds } = await checkout.listRefunds({ orderId });
+```
+
+For Przelewy24, the refund API must be enabled on your merchant account (contact
+your account manager). Refunds are paid from your Przelewy24 balance, so a refund
+can be rejected for insufficient funds.
+
+Status: alpha. Currently supports Przelewy24 only — including full and partial
+refunds. Additional providers land in a later iteration.
 
 ## Packages
 
